@@ -1,0 +1,20 @@
+{
+  "id": "git-manager",
+  "name": "Git Manager",
+  "version": "0.1.0",
+  "description": "Status, stage, commit, branches, sync, rebase, and stash — all from the app card.",
+  "author": "Porta",
+  "activateOn": ["app:root:*"],
+  "permissions": ["shell"],
+  "main": "index.html",
+  "contributes": {
+    "appActions": [
+      {
+        "id": "open",
+        "label": "Git",
+        "icon": "box",
+        "tooltip": "Open Git Manager"
+      }
+    ]
+  }
+}
