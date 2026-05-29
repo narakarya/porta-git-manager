@@ -389,17 +389,20 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 .commit-options .spacer { flex: 1; }
 
 /* ─── Diff lines ─────────────────────────────────────────────────────────── */
-.diff-line {
-  display: block;
-  white-space: pre;
-  padding: 0 12px;
-  min-height: 18px;
-}
-.diff-line.diff-add  { background: var(--diff-add-bg); color: var(--emerald); }
-.diff-line.diff-del  { background: var(--diff-del-bg); color: var(--red); }
-.diff-line.diff-hunk { color: var(--violet); background: rgba(167, 139, 250, 0.04); }
-.diff-line.diff-file { color: var(--blue); font-weight: 600; padding-top: 6px; }
-.diff-line.diff-meta { color: var(--text-dim); }
+.diff-line { display:grid; grid-template-columns:34px 34px 1fr; white-space:pre; min-height:18px; }
+.diff-line .diff-gutter { color:var(--text-dim); text-align:right; padding-right:8px; user-select:none; font-variant-numeric:tabular-nums; }
+.diff-line .diff-code { padding:0 12px 0 6px; }
+.diff-line.diff-add { background:var(--diff-add-bg); }
+.diff-line.diff-del { background:var(--diff-del-bg); }
+.diff-line.diff-add .diff-code { color:var(--emerald); }
+.diff-line.diff-del .diff-code { color:var(--red); }
+.diff-line.diff-hunk { display:block; color:var(--violet); background:rgba(167,139,250,.05); padding:2px 12px; }
+.diff-line.diff-file { display:block; color:var(--blue); font-weight:600; padding:6px 12px 0; }
+.diff-line.diff-meta { display:block; color:var(--text-dim); padding:0 12px; }
+.wd-del { background:var(--diff-del-word); border-radius:2px; }
+.wd-add { background:var(--diff-add-word); border-radius:2px; }
+.syn-keyword { color:var(--syn-keyword); } .syn-string { color:var(--syn-string); }
+.syn-number { color:var(--syn-number); } .syn-comment { color:var(--syn-comment); font-style:italic; }
 
 /* Hunks group + per-hunk action bar */
 .hunk {

@@ -380,6 +380,20 @@
       return null; // context
     }
 
+    // Build the inner code HTML for one diff line: syntax tokens, with
+    // optional word-change spans layered on top. `body` excludes the +/-/space
+    // prefix. `wordTokens` is an array from wordDiff (with a `.cls` property), or null.
+    function diffCodeHtml(body, lang, wordTokens) {
+      const esc = window.GMText.escapeHtml;
+      if (wordTokens) {
+        return wordTokens.map((w) =>
+          w.changed ? '<span class="' + wordTokens.cls + '">' + esc(w.t) + "</span>" : esc(w.t)
+        ).join("");
+      }
+      const toks = window.GMHi.tokenize(body, lang);
+      return toks.map((t) => t.type ? '<span class="syn-' + t.type + '">' + esc(t.t) + "</span>" : esc(t.t)).join("");
+    }
+
     /**
      * Render the parsed diff into `node`. Each hunk is its own .hunk
      * container with a header bar holding the @@ line plus per-hunk
@@ -388,6 +402,7 @@
      */
     function renderDiffInto(node, parsed, source, filePath) {
       node.innerHTML = "";
+      const lang = window.GMHi.langFromPath(filePath || "");
       for (const m of parsed.header) {
         const cls = (m.startsWith("diff ") || m.startsWith("+++") || m.startsWith("---")) ? "diff-file" : "diff-meta";
         node.appendChild(h("span", { class: "diff-line " + cls }, m || " "));
@@ -407,16 +422,35 @@
           );
         }
         wrapper.appendChild(h("div", { class: "hunk-header" }, hunk.header, actions));
-        renderHunkBody(wrapper, hunk);
+        renderHunkBody(wrapper, hunk, lang);
         node.appendChild(wrapper);
       }
     }
 
-    function renderUnifiedHunkBody(wrapper, hunk) {
-      for (const line of hunk.lines) {
-        const kind = classifyDiffLine(line);
-        const cls = "diff-line" + (kind ? " diff-" + kind : "");
-        wrapper.appendChild(h("span", { class: cls }, line || " "));
+    function renderUnifiedHunkBody(wrapper, hunk, lang) {
+      const range = window.GMDiff.parseHunkHeader(hunk.header);
+      const rows = window.GMDiff.numberHunkLines(hunk.lines, range);
+      // Pre-compute word diffs for an adjacent del/add singleton pair.
+      for (let k = 0; k < rows.length; k++) {
+        const r = rows[k], next = rows[k + 1];
+        if (r.kind === "del" && next && next.kind === "add") {
+          const d = window.GMDiff.wordDiff(r.text, next.text);
+          r._wd = d.del; r._wd.cls = "wd-del";
+          next._wd = d.add; next._wd.cls = "wd-add";
+        }
+      }
+      for (const r of rows) {
+        if (r.kind === "meta") {
+          wrapper.appendChild(h("span", { class: "diff-line diff-meta" }, r.text || " "));
+          continue;
+        }
+        const body = r.text.slice(1) || " ";
+        const code = h("span", { class: "diff-code", html: diffCodeHtml(body, lang, r._wd || null) });
+        wrapper.appendChild(h("span", { class: "diff-line diff-" + r.kind },
+          h("span", { class: "diff-gutter" }, r.oldNo == null ? "" : String(r.oldNo)),
+          h("span", { class: "diff-gutter" }, r.newNo == null ? "" : String(r.newNo)),
+          code,
+        ));
       }
     }
 
