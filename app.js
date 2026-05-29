@@ -139,6 +139,46 @@
         if (okBtn) okBtn.focus();
       });
     },
+    /**
+     * Text-input modal replacing `window.prompt`, which the sandboxed
+     * extension iframe blocks (silent fail when clicked). Resolves with
+     * the trimmed value on confirm, or null on cancel.
+     */
+    input({ title, body, placeholder = "", initial = "", okLabel = "OK", cancelLabel = "Cancel" }) {
+      return new Promise((resolve) => {
+        const root = $("#modal-root");
+        root.hidden = false;
+        root.innerHTML = "";
+        let value = initial;
+        const close = (commit) => {
+          root.hidden = true;
+          root.innerHTML = "";
+          window.removeEventListener("keydown", onKey, true);
+          resolve(commit ? (value.trim() || null) : null);
+        };
+        const onKey = (e) => {
+          if (e.key === "Escape") { e.stopPropagation(); close(false); }
+        };
+        window.addEventListener("keydown", onKey, true);
+        const inp = h("input", {
+          class: "input", style: { marginBottom: "12px" },
+          placeholder, value: initial,
+          onInput: (e) => { value = e.target.value; },
+          onKeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); close(true); } },
+        });
+        const card = h("div", { class: "modal-card" },
+          h("h3", null, title),
+          body && h("p", null, body),
+          inp,
+          h("div", { class: "actions" },
+            h("button", { class: "btn-ghost", onClick: () => close(false) }, cancelLabel),
+            h("button", { class: "btn-primary", onClick: () => close(true) }, okLabel),
+          ),
+        );
+        root.appendChild(card);
+        setTimeout(() => inp.focus(), 0);
+      });
+    },
   };
 
   // ── Top-bar branch chip / badges ─────────────────────────────────────────
@@ -224,10 +264,10 @@
     renderActiveTab();
   }
 
-  function renderActiveTab() {
+  async function renderActiveTab() {
     const map = { status: statusTab, branches: branchesTab, sync: syncTab, history: historyTab, rebase: rebaseTab, stash: stashTab, tags: tagsTab };
     const tab = map[state.currentTab];
-    if (tab) tab.render();
+    if (tab) await tab.render();
   }
 
   // ── Status tab ───────────────────────────────────────────────────────────
@@ -900,7 +940,12 @@
     }
 
     async function renameRemote(oldName) {
-      const newName = window.prompt("Rename '" + oldName + "' to:", oldName);
+      const newName = await ui.input({
+        title: "Rename remote",
+        body: `Rename "${oldName}" to:`,
+        initial: oldName,
+        okLabel: "Rename",
+      });
       if (!newName || newName === oldName) return;
       const r = await git("remote rename " + quote(oldName) + " " + quote(newName));
       if (r.code === 0) { ui.toast("Renamed", "success"); await render(); }
@@ -908,7 +953,13 @@
     }
 
     async function setRemoteUrl(name, currentUrl) {
-      const newUrl = window.prompt("New URL for '" + name + "':", currentUrl);
+      const newUrl = await ui.input({
+        title: "Edit remote URL",
+        body: `New URL for "${name}":`,
+        initial: currentUrl,
+        placeholder: "git@github.com:owner/repo.git",
+        okLabel: "Save",
+      });
       if (!newUrl || newUrl === currentUrl) return;
       const r = await git("remote set-url " + quote(name) + " " + quote(newUrl));
       if (r.code === 0) { ui.toast("URL updated", "success"); await render(); }
