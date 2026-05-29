@@ -43,6 +43,8 @@
     stashes: [],
     commitMsg: "",
     commitAmend: false,
+    diffView: "unified", // "unified" | "split" — toggled by Status tab toolbar
+    remotes: [],         // populated by Sync tab
   };
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -342,6 +344,7 @@
      * Render the parsed diff into `node`. Each hunk is its own .hunk
      * container with a header bar holding the @@ line plus per-hunk
      * action buttons (Stage/Unstage/Discard, depending on `source`).
+     * Dispatches to the unified or split renderer based on state.diffView.
      */
     function renderDiffInto(node, parsed, source, filePath) {
       node.innerHTML = "";
@@ -349,6 +352,7 @@
         const cls = (m.startsWith("diff ") || m.startsWith("+++") || m.startsWith("---")) ? "diff-file" : "diff-meta";
         node.appendChild(h("span", { class: "diff-line " + cls }, m || " "));
       }
+      const renderHunkBody = state.diffView === "split" ? renderSplitHunkBody : renderUnifiedHunkBody;
       for (const hunk of parsed.hunks) {
         const wrapper = h("div", { class: "hunk" });
         const actions = h("span", { class: "hunk-actions" });
@@ -363,13 +367,64 @@
           );
         }
         wrapper.appendChild(h("div", { class: "hunk-header" }, hunk.header, actions));
-        for (const line of hunk.lines) {
-          const kind = classifyDiffLine(line);
-          const cls = "diff-line" + (kind ? " diff-" + kind : "");
-          wrapper.appendChild(h("span", { class: cls }, line || " "));
-        }
+        renderHunkBody(wrapper, hunk);
         node.appendChild(wrapper);
       }
+    }
+
+    function renderUnifiedHunkBody(wrapper, hunk) {
+      for (const line of hunk.lines) {
+        const kind = classifyDiffLine(line);
+        const cls = "diff-line" + (kind ? " diff-" + kind : "");
+        wrapper.appendChild(h("span", { class: cls }, line || " "));
+      }
+    }
+
+    /**
+     * Split-view: pair consecutive removed/added runs into side-by-side
+     * rows. Context lines appear on both sides. When a run of removals is
+     * not the same length as the following run of additions, the longer
+     * side spills to extra rows with the shorter side blank.
+     */
+    function renderSplitHunkBody(wrapper, hunk) {
+      const grid = h("div", { class: "diff-split" });
+      // Buffers for the current run of removals/additions. They get
+      // flushed (as paired rows) whenever we hit a context line or EOH.
+      let dels = [];
+      let adds = [];
+
+      function flush() {
+        const n = Math.max(dels.length, adds.length);
+        for (let i = 0; i < n; i++) {
+          const left  = i < dels.length ? dels[i] : null;
+          const right = i < adds.length ? adds[i] : null;
+          grid.append(
+            h("span", {
+              class: "diff-cell diff-cell-left" + (left ? " diff-del" : " diff-blank"),
+            }, left == null ? " " : left.slice(1) || " "),
+            h("span", {
+              class: "diff-cell diff-cell-right" + (right ? " diff-add" : " diff-blank"),
+            }, right == null ? " " : right.slice(1) || " "),
+          );
+        }
+        dels = [];
+        adds = [];
+      }
+
+      for (const line of hunk.lines) {
+        if (line.startsWith("-")) { dels.push(line); continue; }
+        if (line.startsWith("+")) { adds.push(line); continue; }
+        // Anything else (context, "\ No newline…") closes the pending run.
+        flush();
+        const body = line.startsWith(" ") || line.startsWith("\\") ? line.slice(1) : line;
+        const cls = line.startsWith("\\") ? " diff-meta" : "";
+        grid.append(
+          h("span", { class: "diff-cell diff-cell-left"  + cls }, body || " "),
+          h("span", { class: "diff-cell diff-cell-right" + cls }, body || " "),
+        );
+      }
+      flush();
+      wrapper.appendChild(grid);
     }
 
     // ── Per-hunk actions ───────────────────────────────────────────────────
@@ -553,6 +608,19 @@
         filterInput,
         h("button", { class: "btn-ghost", onClick: stageAll, disabled: unstaged.length === 0 }, "Stage all"),
         h("button", { class: "btn-ghost", onClick: unstageAll, disabled: staged.length === 0 }, "Unstage all"),
+        h("div", { style: { flex: "1" } }),
+        // View toggle: unified diff is one column with +/- prefixes; split
+        // shows the old/new sides in two columns so paired changes line up.
+        h("div", { class: "view-toggle" },
+          h("button", {
+            class: "view-toggle-btn" + (state.diffView === "unified" ? " is-active" : ""),
+            onClick: () => { state.diffView = "unified"; render(); },
+          }, "Unified"),
+          h("button", {
+            class: "view-toggle-btn" + (state.diffView === "split" ? " is-active" : ""),
+            onClick: () => { state.diffView = "split"; render(); },
+          }, "Split"),
+        ),
       );
       node.append(toolbar);
 
@@ -786,6 +854,66 @@
   const syncTab = (() => {
     const pane = () => document.querySelector('.pane[data-pane="sync"]');
     let running = null; // action name currently running, for visual feedback
+    let newRemoteName = "";
+    let newRemoteUrl = "";
+
+    async function loadRemotes() {
+      const r = await git("remote -v");
+      if (r.code !== 0) return [];
+      const map = new Map();
+      for (const line of r.stdout.split("\n").filter(Boolean)) {
+        const m = line.match(/^(\S+)\s+(\S+)\s+\((fetch|push)\)$/);
+        if (!m) continue;
+        const [, name, url, kind] = m;
+        if (!map.has(name)) map.set(name, { name, fetchUrl: "", pushUrl: "" });
+        const r = map.get(name);
+        if (kind === "fetch") r.fetchUrl = url;
+        else r.pushUrl = url;
+      }
+      return [...map.values()];
+    }
+
+    async function addRemote() {
+      const name = newRemoteName.trim();
+      const url = newRemoteUrl.trim();
+      if (!name || !url) return;
+      const r = await git("remote add " + quote(name) + " " + quote(url));
+      if (r.code === 0) {
+        newRemoteName = "";
+        newRemoteUrl = "";
+        ui.toast("Added remote " + name, "success");
+        await render();
+      } else ui.toast(r.stderr || "Add remote failed", "error", 5000);
+    }
+
+    async function removeRemote(name) {
+      const ok = await ui.confirm({
+        title: "Remove remote?",
+        body: `Stops tracking ${name}. Branches that tracked it become orphaned, but their commits stay.`,
+        danger: true, okLabel: "Remove",
+      });
+      if (!ok) return;
+      const r = await git("remote remove " + quote(name));
+      if (r.code === 0) ui.toast("Removed " + name, "success");
+      else ui.toast(r.stderr || "Remove failed", "error", 5000);
+      await render();
+    }
+
+    async function renameRemote(oldName) {
+      const newName = window.prompt("Rename '" + oldName + "' to:", oldName);
+      if (!newName || newName === oldName) return;
+      const r = await git("remote rename " + quote(oldName) + " " + quote(newName));
+      if (r.code === 0) { ui.toast("Renamed", "success"); await render(); }
+      else ui.toast(r.stderr || "Rename failed", "error", 5000);
+    }
+
+    async function setRemoteUrl(name, currentUrl) {
+      const newUrl = window.prompt("New URL for '" + name + "':", currentUrl);
+      if (!newUrl || newUrl === currentUrl) return;
+      const r = await git("remote set-url " + quote(name) + " " + quote(newUrl));
+      if (r.code === 0) { ui.toast("URL updated", "success"); await render(); }
+      else ui.toast(r.stderr || "Update failed", "error", 5000);
+    }
 
     async function runWithFeedback(name, cmd, okMsg) {
       running = name;
@@ -828,7 +956,7 @@
       );
     }
 
-    function render() {
+    async function render() {
       const node = pane();
       node.innerHTML = "";
       node.className = "pane is-active sync-pane";
@@ -846,6 +974,55 @@
         ),
       );
       node.append(summary);
+
+      // ─── Remotes section ──────────────────────────────────────────────
+      const remotes = await loadRemotes();
+      state.remotes = remotes;
+      const remotesBox = h("div", { class: "sync-summary" },
+        h("div", { class: "label" }, "Remotes"),
+      );
+      if (remotes.length === 0) {
+        remotesBox.append(h("div", { class: "value", style: { color: "var(--text-mute)", fontSize: "11px" } }, "No remotes configured"));
+      } else {
+        const list = h("div", { class: "remote-list" });
+        for (const r of remotes) {
+          list.append(h("div", { class: "remote-row" },
+            h("span", { class: "remote-name" }, r.name),
+            h("span", { class: "remote-url", title: r.fetchUrl }, r.fetchUrl),
+            h("span", { class: "remote-actions" },
+              h("button", { class: "row-action",        onClick: () => setRemoteUrl(r.name, r.fetchUrl) }, "edit URL"),
+              h("button", { class: "row-action",        onClick: () => renameRemote(r.name)             }, "rename"),
+              h("button", { class: "row-action danger", onClick: () => removeRemote(r.name)             }, "remove"),
+            ),
+          ));
+        }
+        remotesBox.append(list);
+      }
+      // Add-remote form (always visible — most repos have <5 remotes).
+      const nameInput = h("input", {
+        class: "input", style: { maxWidth: "140px" },
+        placeholder: "Name (e.g. origin)",
+        value: newRemoteName,
+        onInput: (e) => { newRemoteName = e.target.value; },
+        onKeydown: (e) => { if (e.key === "Enter") addRemote(); },
+      });
+      const urlInput = h("input", {
+        class: "input",
+        placeholder: "URL (git@…:owner/repo.git)",
+        value: newRemoteUrl,
+        onInput: (e) => { newRemoteUrl = e.target.value; },
+        onKeydown: (e) => { if (e.key === "Enter") addRemote(); },
+      });
+      remotesBox.append(h("div", { class: "remote-add-form" },
+        nameInput,
+        urlInput,
+        h("button", {
+          class: "btn-primary",
+          onClick: addRemote,
+          disabled: !newRemoteName.trim() || !newRemoteUrl.trim(),
+        }, "Add"),
+      ));
+      node.append(remotesBox);
 
       const grid = h("div", { class: "sync-grid" },
         actionCard({ name: "Fetch",            desc: "Update remote refs without merging.",            onClick: () => fetch(false) }),

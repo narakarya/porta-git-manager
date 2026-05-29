@@ -7,9 +7,9 @@ pure HTML + JS + CSS that talks to Porta via `window.portaBridge`.
 
 | Tab | What |
 |-----|------|
-| **Status** | Split view with diff preview, **per-hunk Stage / Unstage / Discard** buttons (hover the hunk header), file-level stage / unstage / discard, commit + amend (⌘↵). |
+| **Status** | Split view with diff preview, **per-hunk Stage / Unstage / Discard** (hover the hunk header), file-level stage / unstage / discard, commit + amend (⌘↵), **Unified ↔ Split diff toggle** *(new in 0.4.0)*. |
 | **Branches** | Local + remote, filter input, current marker, ahead/behind tracking, create + switch + (force-)delete. |
-| **Sync** | Card grid: Fetch, Fetch + prune, Pull, Pull --rebase, Push, Push --force-with-lease. Per-card running state. |
+| **Sync** | Card grid: Fetch, Fetch + prune, Pull, Pull --rebase, Push, Push --force-with-lease. Per-card running state. **Remote management** *(new in 0.4.0)*: list / add / rename / edit-URL / remove. |
 | **History** | Split view: last 100 commits with message search; click to see header + colored diff. |
 | **Rebase** | Pick a target ref, choose pick/squash/fixup/drop per commit, reorder with ↑↓, abort/continue when paused. |
 | **Stash** | List, save (with message + include-untracked toggle), apply, pop, drop. |
@@ -23,6 +23,28 @@ pure HTML + JS + CSS that talks to Porta via `window.portaBridge`.
 - Toasts replace native dialogs for routine feedback; an in-app modal handles
   destructive confirmations so you stay inside the panel.
 - Every git action auto-refreshes the relevant tab — no manual reload.
+
+## Split / unified diff (0.4.0)
+
+In the Status tab toolbar, toggle between **Unified** (single column with
+`+`/`-` prefixes) and **Split** (two columns, old left, new right). Split
+view pairs consecutive removed/added lines so corresponding edits sit on
+the same row; uneven runs spill into extra rows with the shorter side
+blank. Context lines mirror on both sides.
+
+## Remote management (0.4.0)
+
+In the Sync tab, the Remotes box lists each remote with its fetch URL.
+Per-row actions:
+
+- **edit URL** — `git remote set-url <name> <url>`
+- **rename** — `git remote rename <old> <new>`
+- **remove** — `git remote remove <name>` (with confirm)
+
+The add-remote form at the bottom takes a name + URL and runs
+`git remote add`. Push / fetch from the Tags tab and the sync grid use
+the standard remote resolution, so adding/removing a remote here
+immediately affects what gets fetched and pushed.
 
 ## Per-hunk staging (0.3.0)
 

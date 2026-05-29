@@ -444,6 +444,47 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 .hunk-action:hover { color: var(--text); background: rgba(255, 255, 255, 0.06); }
 .hunk-action.danger:hover { color: var(--red); }
 
+/* ─── View toggle (unified / split) ────────────────────────────────────── */
+.view-toggle {
+  display: inline-flex;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.view-toggle-btn {
+  background: transparent;
+  border: 0;
+  color: var(--text-mute);
+  font-size: 10px;
+  padding: 4px 9px;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+}
+.view-toggle-btn:last-child { border-right: 0; }
+.view-toggle-btn:hover { color: var(--text); }
+.view-toggle-btn.is-active { background: rgba(96, 165, 250, 0.12); color: var(--blue); }
+
+/* ─── Split diff grid ──────────────────────────────────────────────────── */
+.diff-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.diff-cell {
+  display: block;
+  white-space: pre;
+  padding: 0 10px;
+  min-height: 18px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  border-right: 1px solid var(--border);
+}
+.diff-cell.diff-cell-right { border-right: 0; }
+.diff-cell.diff-del { background: var(--diff-del-bg); color: var(--red); }
+.diff-cell.diff-add { background: var(--diff-add-bg); color: var(--emerald); }
+.diff-cell.diff-blank { background: rgba(255, 255, 255, 0.02); }
+.diff-cell.diff-meta { color: var(--text-dim); }
+
 /* ─── Tags pane ──────────────────────────────────────────────────────────── */
 .tags-pane { display: flex; flex-direction: column; height: 100%; }
 .tags-top {
@@ -545,6 +586,32 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 .sync-action.danger .name { color: var(--red); }
 .sync-action.running { background: rgba(96, 165, 250, 0.06); border-color: rgba(96, 165, 250, 0.18); }
 .sync-action.running .name { color: var(--blue); }
+
+/* Remote management inside Sync tab */
+.remote-list { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.remote-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 120px) 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+}
+.remote-row:hover { background: var(--bg-hover); }
+.remote-row .remote-name { color: var(--violet); font-weight: 500; }
+.remote-row .remote-url  { color: var(--text-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.remote-row .remote-actions { display: flex; gap: 2px; opacity: 0; }
+.remote-row:hover .remote-actions { opacity: 1; }
+
+.remote-add-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
 
 /* ─── Branches pane ──────────────────────────────────────────────────────── */
 .branches-pane { display: flex; flex-direction: column; height: 100%; }
