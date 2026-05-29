@@ -9,15 +9,30 @@
   <div id="root">
     <!-- Tab bar -->
     <nav class="tabs">
-      <button class="tab is-active" data-tab="status">Status</button>
-      <button class="tab" data-tab="branches">Branches</button>
-      <button class="tab" data-tab="sync">Sync</button>
-      <button class="tab" data-tab="history">History</button>
-      <button class="tab" data-tab="rebase">Rebase</button>
-      <button class="tab" data-tab="stash">Stash</button>
+      <button class="tab is-active" data-tab="status" data-key="1">
+        <span class="tab-label">Status</span>
+        <span class="tab-badge" id="badge-status"></span>
+      </button>
+      <button class="tab" data-tab="branches" data-key="2">
+        <span class="tab-label">Branches</span>
+      </button>
+      <button class="tab" data-tab="sync" data-key="3">
+        <span class="tab-label">Sync</span>
+      </button>
+      <button class="tab" data-tab="history" data-key="4">
+        <span class="tab-label">History</span>
+      </button>
+      <button class="tab" data-tab="rebase" data-key="5">
+        <span class="tab-label">Rebase</span>
+        <span class="tab-badge" id="badge-rebase"></span>
+      </button>
+      <button class="tab" data-tab="stash" data-key="6">
+        <span class="tab-label">Stash</span>
+        <span class="tab-badge" id="badge-stash"></span>
+      </button>
       <div class="tab-spacer"></div>
       <span id="branch-chip" class="branch-chip" title="Current branch"></span>
-      <button id="refresh-btn" class="icon-btn" title="Refresh">
+      <button id="refresh-btn" class="icon-btn" title="Refresh (R)">
         <svg viewBox="0 0 12 12" width="12" height="12" fill="none">
           <path d="M10 5.5A4 4 0 1 1 8.8 2.7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
           <path d="M10 1.5v3H7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
@@ -27,44 +42,31 @@
 
     <!-- Panes -->
     <main class="panes">
-      <section class="pane is-active" data-pane="status">
-        <div class="pane-inner" id="status-pane">
-          <div class="loading">Loading…</div>
-        </div>
-      </section>
-      <section class="pane" data-pane="branches">
-        <div class="pane-inner" id="branches-pane"></div>
-      </section>
-      <section class="pane" data-pane="sync">
-        <div class="pane-inner" id="sync-pane"></div>
-      </section>
-      <section class="pane" data-pane="history">
-        <div class="pane-inner" id="history-pane"></div>
-      </section>
-      <section class="pane" data-pane="rebase">
-        <div class="pane-inner" id="rebase-pane"></div>
-      </section>
-      <section class="pane" data-pane="stash">
-        <div class="pane-inner" id="stash-pane"></div>
-      </section>
+      <section class="pane is-active" data-pane="status"></section>
+      <section class="pane" data-pane="branches"></section>
+      <section class="pane" data-pane="sync"></section>
+      <section class="pane" data-pane="history"></section>
+      <section class="pane" data-pane="rebase"></section>
+      <section class="pane" data-pane="stash"></section>
     </main>
 
-    <!-- Bottom output drawer -->
-    <aside id="drawer" class="drawer">
-      <div class="drawer-header">
-        <span class="drawer-title">Output</span>
-        <button id="drawer-clear" class="drawer-btn">clear</button>
-        <button id="drawer-toggle" class="drawer-btn">hide</button>
-      </div>
-      <pre id="drawer-output" class="drawer-output"></pre>
-    </aside>
+    <!-- Toast region — host overlays without disturbing layout -->
+    <div id="toast-region" class="toast-region"></div>
+
+    <!-- Modal confirmation -->
+    <div id="modal-root" class="modal-root" hidden></div>
   </div>
 
   <!-- Templates -->
   <template id="tpl-no-repo">
     <div class="empty">
+      <div class="empty-icon">
+        <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M3 6h18M3 12h18M3 18h18"/>
+        </svg>
+      </div>
       <p class="empty-title">No git repository</p>
-      <p class="empty-sub">This app's root_dir is not a git repository.</p>
+      <p class="empty-sub">This app's root directory isn't a git repo.</p>
       <button class="btn-primary" data-act="init">Run <code>git init</code></button>
     </div>
   </template>

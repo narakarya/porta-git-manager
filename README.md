@@ -7,30 +7,65 @@ pure HTML + JS + CSS that talks to Porta via `window.portaBridge`.
 
 | Tab | What |
 |-----|------|
-| **Status** | Working-tree and staged diff, stage/unstage per file, discard, commit (with amend) |
-| **Branches** | List local + remote, switch, create, delete (with force-delete fallback), see upstream tracking + ahead/behind |
-| **Sync** | Fetch (+ prune), pull, pull --rebase, push, push --force-with-lease |
-| **History** | Last 100 commits; click to expand `git show --stat -p` with colored diff |
-| **Rebase** | Pick a target (`HEAD~5`, `main`, SHA…); choose pick/squash/fixup/drop per commit; abort/continue when paused |
-| **Stash** | Save (optional message + include-untracked), apply, pop, drop |
+| **Status** | Split view: file list on the left, diff preview on the right. Filter input, stage / unstage / discard per file, commit (or amend) with `⌘↵`. |
+| **Branches** | Local + remote, filter input, current marker, ahead/behind tracking, create + switch + (force-)delete. |
+| **Sync** | Card grid: Fetch, Fetch + prune, Pull, Pull --rebase, Push, Push --force-with-lease. Per-card running state. |
+| **History** | Split view: last 100 commits with message search; click to see header + colored diff. |
+| **Rebase** | Pick a target ref, choose pick/squash/fixup/drop per commit, reorder with ↑↓, abort/continue when paused. |
+| **Stash** | List, save (with message + include-untracked toggle), apply, pop, drop. |
 
-All commands stream to the bottom drawer so you can scrub output, retry, or
-copy the failing line into a terminal.
+## UX shortcuts
 
-## Install (dev)
+- `1`–`6` switch tabs.
+- `R` refreshes the active tab (branch, status, rebase state, stash count).
+- `⌘↵` (or `Ctrl↵`) inside the commit textarea commits.
+- Toasts replace native dialogs for routine feedback; an in-app modal handles
+  destructive confirmations so you stay inside the panel.
+- Every git action auto-refreshes the relevant tab — no manual reload.
 
-1. Open Porta → Settings → Extensions → "Install from folder…".
-2. Pick this folder.
-3. Open any app card → click Extensions → choose **Git Manager**.
+## Install (locally bundled)
 
-## Install (from GitHub)
+This folder ships inside the Porta repo at `extensions-bundled/git-manager/`.
 
-Once published, install via shorthand: `owner/repo` or the full GitHub URL.
+**One-off install (Settings UI):**
+1. Porta → Settings → Extensions → "Install from folder…"
+2. Pick `<porta-repo>/extensions-bundled/git-manager`
+
+**Symlink (hot-reload during dev):**
+```bash
+ln -s "$PWD/extensions-bundled/git-manager" ~/.porta/extensions/git-manager
+```
+Then Settings → Extensions → refresh (↻).
+
+## Install (from GitHub subpath, Porta ≥ 0.5.69)
+
+The loader supports `owner/repo:subpath` shorthand. Settings → Extensions →
+"Install from GitHub" with:
+
+```
+narakarya/porta:extensions-bundled/git-manager
+```
+
+or a branch-pinned form:
+
+```
+narakarya/porta@main:extensions-bundled/git-manager
+```
+
+Equivalent full URL:
+
+```
+https://github.com/narakarya/porta/tree/main/extensions-bundled/git-manager
+```
+
+Porta downloads the whole repo zip into a tempdir, then installs the
+extension from the subpath. Updates use the same URL via the "Update" button
+in Settings → Extensions.
 
 ## Security
 
-- The extension only sees `app.root_dir`. Porta's `extension_shell_run` refuses
-  any `cwd` outside of it.
+- Only sees `app.root_dir`. Porta's `extension_shell_run` refuses any `cwd`
+  outside of it.
 - Requires only the `shell` permission. No network, no filesystem outside
   `root_dir`.
 
@@ -39,11 +74,11 @@ Once published, install via shorthand: `owner/repo` or the full GitHub URL.
 The UI drives `git rebase -i` non-interactively:
 
 - `GIT_SEQUENCE_EDITOR='cp <tmp>'` overwrites git's auto-generated todo with
-  ours, so the pick/squash/fixup/drop choices you set in the UI take effect.
+  the pick/squash/fixup/drop choices you set in the UI.
 - `GIT_EDITOR=true` accepts squash's combined-message editor unchanged — you
-  get git's default merged message. Use Status → Amend to rewrite it after.
+  get git's default merged message. Use Status → Amend HEAD to rewrite it.
 - On conflict, the rebase pauses. Resolve in your editor, stage the fixes
-  from the Status tab, then return here and click **Continue**.
+  from the Status tab, then click **Continue** here.
 
-If you want to abandon a paused rebase, hit **Abort** — it runs
+If you want to abandon a paused rebase, hit **Abort** — runs
 `git rebase --abort` and you're back where you started.

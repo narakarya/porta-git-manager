@@ -1,5 +1,15 @@
-// Git Manager — single-file vanilla JS module. Runs inside Porta's extension
-// iframe, talks to the host via `window.portaBridge`.
+// Git Manager — vanilla JS git GUI. Talks to Porta's host via portaBridge.
+//
+// Structural notes:
+//   • Each tab is a closure that owns its own render state and exposes only
+//     `render(opts?)`. The shell calls render() when the tab activates and
+//     after any global refresh.
+//   • All git work goes through `git(args)` / `sh(cmd)` which return the
+//     ShellResult shape from the bridge. Callers decide how to surface
+//     errors (toast vs. inline banner vs. modal).
+//   • UI primitives (toast, confirm modal, file selector) live in `ui.*`
+//     and are *not* the host's portaBridge.ui — those are too thin for
+//     anything more than a status message.
 (function () {
   "use strict";
 
@@ -9,100 +19,157 @@
     return;
   }
 
-  // ── State ──────────────────────────────────────────────────────────────
+  // ── Global state ─────────────────────────────────────────────────────────
   const state = {
     currentTab: "status",
-    branch: null,            // resolved current branch name
-    upstream: null,          // upstream tracking branch ("origin/main", etc.)
-    aheadBehind: null,       // { ahead, behind }
-    log: [],                 // last `git log` result for history/rebase
-    rebasePlan: [],          // { sha, msg, op } in topological order (oldest→newest)
+    branch: null,
+    upstream: null,
+    aheadBehind: null,
     rebaseInProgress: false,
+    stashCount: 0,
     repoOk: false,
+    // Per-tab caches that survive tab switching — refetched only by refresh()
+    // or after an action that invalidates the cache.
+    statusFiles: { staged: [], unstaged: [] },
+    selectedFile: null,
+    fileFilter: "",
+    branches: { local: [], remote: [] },
+    branchFilter: "",
+    log: [],
+    historyFilter: "",
+    selectedCommit: null,
+    rebasePlan: [],
+    rebaseTarget: "HEAD~5",
+    stashes: [],
+    commitMsg: "",
+    commitAmend: false,
   };
 
-  // ── Helpers ────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const $ = (sel, root) => (root || document).querySelector(sel);
+  const quote = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 
-  /** POSIX-safe single-quote escape so we can splice values into a shell command. */
-  function quote(s) {
-    return "'" + String(s).replace(/'/g, "'\\''") + "'";
-  }
-
-  /**
-   * Run `git <args>` in the app's root. Pass `args` as a single shell string
-   * (you escape values, we don't second-guess). Returns the full ShellResult.
-   */
   function git(args, opts) {
     return bridge.shell.run("git " + args, opts || {});
   }
-
-  /** Run any shell command verbatim. Same return shape. */
   function sh(cmd, opts) {
     return bridge.shell.run(cmd, opts || {});
   }
 
-  /** Stream a command's output to the drawer; resolves with ShellResult. */
-  function streamCmd(cmd, opts) {
-    drawer.append("$ " + cmd + "\n", "log-cmd");
-    drawer.open();
-    return bridge.shell.spawn(cmd, opts || {}, {
-      onStdout: (line) => drawer.append(line + "\n"),
-      onStderr: (line) => drawer.append(line + "\n", "log-err"),
-    });
-  }
-
-  function toast(msg, kind) { bridge.ui.toast(msg, kind || "info"); }
-
-  /** Render `text` into `node`, escaping HTML. */
-  function setText(node, text) { node.textContent = text; }
-
-  /** Build a DOM element from `(tag, props, ...children)`. */
+  /** Create an element via (tag, props?, ...children). False/null children skipped. */
   function h(tag, props, ...children) {
     const el = document.createElement(tag);
     if (props) {
-      for (const key in props) {
-        if (key === "class") el.className = props[key];
-        else if (key === "html") el.innerHTML = props[key];
-        else if (key.startsWith("on") && typeof props[key] === "function") {
-          el.addEventListener(key.slice(2).toLowerCase(), props[key]);
-        } else if (key === "dataset") {
-          for (const k in props[key]) el.dataset[k] = props[key][k];
-        } else if (key in el) {
-          el[key] = props[key];
+      for (const k in props) {
+        const v = props[k];
+        if (k === "class") el.className = v;
+        else if (k === "html") el.innerHTML = v;
+        else if (k === "dataset") for (const d in v) el.dataset[d] = v[d];
+        else if (k.startsWith("on") && typeof v === "function") {
+          el.addEventListener(k.slice(2).toLowerCase(), v);
+        } else if (k === "style" && typeof v === "object") {
+          for (const s in v) el.style[s] = v[s];
+        } else if (k in el) {
+          el[k] = v;
         } else {
-          el.setAttribute(key, props[key]);
+          el.setAttribute(k, v);
         }
       }
     }
-    for (const child of children) {
-      if (child == null || child === false) continue;
-      el.append(child.nodeType ? child : document.createTextNode(child));
+    for (const c of children) {
+      if (c == null || c === false) continue;
+      el.append(c.nodeType ? c : document.createTextNode(String(c)));
     }
     return el;
   }
 
-  // ── Drawer (bottom output panel) ───────────────────────────────────────
-  const drawer = {
-    el: null,
-    out: null,
-    open() { this.el && this.el.classList.add("is-open"); this._setToggle("hide"); },
-    close() { this.el && this.el.classList.remove("is-open"); this._setToggle("show"); },
-    append(text, kind) {
-      if (!this.out) return;
-      const span = document.createElement("span");
-      if (kind) span.className = kind;
-      span.textContent = text;
-      this.out.appendChild(span);
-      this.out.scrollTop = this.out.scrollHeight;
+  function splitPath(p) {
+    const i = p.lastIndexOf("/");
+    return i === -1 ? { dir: "", name: p } : { dir: p.slice(0, i + 1), name: p.slice(i + 1) };
+  }
+
+  // ── UI primitives: toast + modal confirm ─────────────────────────────────
+  const ui = {
+    toast(msg, kind = "info", ms = 2400) {
+      const region = $("#toast-region");
+      if (!region) return;
+      const t = h("div", { class: "toast toast-" + kind },
+        h("span", { class: "toast-msg" }, msg),
+        h("button", {
+          class: "toast-close",
+          onClick: () => t.remove(),
+          innerHTML: '<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+        }),
+      );
+      region.appendChild(t);
+      if (ms > 0) setTimeout(() => t.remove(), ms);
     },
-    clear() { if (this.out) this.out.textContent = ""; },
-    _setToggle(label) {
-      const btn = document.getElementById("drawer-toggle");
-      if (btn) btn.textContent = label;
+    confirm({ title, body, danger, okLabel = "OK", cancelLabel = "Cancel" }) {
+      return new Promise((resolve) => {
+        const root = $("#modal-root");
+        root.hidden = false;
+        root.innerHTML = "";
+        const close = (ok) => {
+          root.hidden = true;
+          root.innerHTML = "";
+          window.removeEventListener("keydown", onKey, true);
+          resolve(ok);
+        };
+        const onKey = (e) => {
+          if (e.key === "Escape") { e.stopPropagation(); close(false); }
+          else if (e.key === "Enter") { e.preventDefault(); close(true); }
+        };
+        window.addEventListener("keydown", onKey, true);
+        const card = h("div", { class: "modal-card" },
+          h("h3", null, title),
+          body && h("p", null, body),
+          h("div", { class: "actions" },
+            h("button", { class: "btn-ghost", onClick: () => close(false) }, cancelLabel),
+            h("button", {
+              class: danger ? "btn-danger" : "btn-primary",
+              onClick: () => close(true),
+              autofocus: true,
+            }, okLabel),
+          ),
+        );
+        root.appendChild(card);
+        const okBtn = card.querySelector("button[autofocus]");
+        if (okBtn) okBtn.focus();
+      });
     },
   };
 
-  // ── Repo detection + current branch lookup ─────────────────────────────
+  // ── Top-bar branch chip / badges ─────────────────────────────────────────
+  function paintTopBar() {
+    const chip = $("#branch-chip");
+    if (chip) {
+      chip.innerHTML = "";
+      if (state.branch) {
+        chip.append(state.branch);
+        if (state.aheadBehind) {
+          if (state.aheadBehind.ahead) {
+            chip.append(h("span", { class: "delta ahead" }, " ↑" + state.aheadBehind.ahead));
+          }
+          if (state.aheadBehind.behind) {
+            chip.append(h("span", { class: "delta behind" }, " ↓" + state.aheadBehind.behind));
+          }
+        }
+      }
+    }
+    const setBadge = (id, text, urgent) => {
+      const b = document.getElementById(id);
+      if (!b) return;
+      if (text) { b.textContent = text; b.classList.add("show"); }
+      else b.classList.remove("show");
+      b.classList.toggle("urgent", !!urgent);
+    };
+    const changesCount = state.statusFiles.staged.length + state.statusFiles.unstaged.length;
+    setBadge("badge-status", changesCount > 0 ? String(changesCount) : "");
+    setBadge("badge-stash", state.stashCount > 0 ? String(state.stashCount) : "");
+    setBadge("badge-rebase", state.rebaseInProgress ? "!" : "", true);
+  }
+
+  // ── Repo / HEAD probes ───────────────────────────────────────────────────
   async function detectRepo() {
     const r = await git("rev-parse --is-inside-work-tree");
     state.repoOk = r.code === 0 && r.stdout.trim() === "true";
@@ -110,7 +177,6 @@
   }
 
   async function readHead() {
-    // Detached HEAD → returns "HEAD"; we display the short SHA instead.
     const head = await git("symbolic-ref --quiet --short HEAD");
     if (head.code === 0) {
       state.branch = head.stdout.trim();
@@ -127,75 +193,50 @@
         state.aheadBehind = { ahead, behind };
       } else state.aheadBehind = null;
     } else state.aheadBehind = null;
-
-    const chip = document.getElementById("branch-chip");
-    if (chip) {
-      let label = state.branch;
-      if (state.aheadBehind && (state.aheadBehind.ahead || state.aheadBehind.behind)) {
-        const parts = [];
-        if (state.aheadBehind.ahead) parts.push("↑" + state.aheadBehind.ahead);
-        if (state.aheadBehind.behind) parts.push("↓" + state.aheadBehind.behind);
-        label += " " + parts.join(" ");
-      }
-      chip.textContent = label;
-    }
   }
 
-  async function detectRebaseInProgress() {
+  async function detectRebase() {
     const r = await git("rev-parse --git-path rebase-merge");
-    if (r.code !== 0) {
-      state.rebaseInProgress = false;
-      return;
-    }
-    const path = r.stdout.trim();
-    const check = await sh("test -d " + quote(path) + " && echo yes || echo no");
-    state.rebaseInProgress = check.stdout.trim() === "yes";
-    if (!state.rebaseInProgress) {
-      const r2 = await git("rev-parse --git-path rebase-apply");
-      if (r2.code === 0) {
-        const p2 = r2.stdout.trim();
-        const c2 = await sh("test -d " + quote(p2) + " && echo yes || echo no");
-        state.rebaseInProgress = c2.stdout.trim() === "yes";
-      }
-    }
+    if (r.code !== 0) { state.rebaseInProgress = false; return; }
+    const p = r.stdout.trim();
+    const c = await sh("test -d " + quote(p) + " && echo y || echo n");
+    if (c.stdout.trim() === "y") { state.rebaseInProgress = true; return; }
+    const r2 = await git("rev-parse --git-path rebase-apply");
+    if (r2.code === 0) {
+      const p2 = r2.stdout.trim();
+      const c2 = await sh("test -d " + quote(p2) + " && echo y || echo n");
+      state.rebaseInProgress = c2.stdout.trim() === "y";
+    } else state.rebaseInProgress = false;
   }
 
-  // ── Tab routing ────────────────────────────────────────────────────────
+  async function probeStashCount() {
+    const r = await git("stash list --format=%gd");
+    state.stashCount = r.code === 0 ? r.stdout.split("\n").filter(Boolean).length : 0;
+  }
+
+  // ── Tab routing ──────────────────────────────────────────────────────────
   function activateTab(name) {
     state.currentTab = name;
-    document.querySelectorAll(".tab").forEach((t) =>
-      t.classList.toggle("is-active", t.dataset.tab === name)
-    );
-    document.querySelectorAll(".pane").forEach((p) =>
-      p.classList.toggle("is-active", p.dataset.pane === name)
-    );
+    document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-active", t.dataset.tab === name));
+    document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("is-active", p.dataset.pane === name));
     renderActiveTab();
   }
 
-  async function renderActiveTab() {
-    switch (state.currentTab) {
-      case "status":   return statusTab.render();
-      case "branches": return branchesTab.render();
-      case "sync":     return syncTab.render();
-      case "history":  return historyTab.render();
-      case "rebase":   return rebaseTab.render();
-      case "stash":    return stashTab.render();
-    }
+  function renderActiveTab() {
+    const map = { status: statusTab, branches: branchesTab, sync: syncTab, history: historyTab, rebase: rebaseTab, stash: stashTab };
+    const tab = map[state.currentTab];
+    if (tab) tab.render();
   }
 
-  // ── Status tab ─────────────────────────────────────────────────────────
+  // ── Status tab ───────────────────────────────────────────────────────────
   const statusTab = (() => {
-    const pane = () => document.getElementById("status-pane");
-    let commitMsg = "";
-    let amend = false;
+    const pane = () => document.querySelector('.pane[data-pane="status"]');
+    let lastDiffPath = null;
+    let lastDiffSource = null;  // "staged" | "unstaged" | "untracked"
 
-    function parseStatus(porc) {
-      // git status --porcelain=v1: XY <path>
-      // X = index, Y = worktree. " " means unchanged. "?" = untracked.
-      const staged = [];
-      const unstaged = [];
-      const lines = porc.split("\n").filter(Boolean);
-      for (const line of lines) {
+    function parsePorcelain(text) {
+      const staged = [], unstaged = [];
+      for (const line of text.split("\n").filter(Boolean)) {
         if (line.length < 3) continue;
         const x = line[0], y = line[1];
         const path = line.slice(3).replace(/^"|"$/g, "");
@@ -206,188 +247,308 @@
     }
 
     function statusClass(code) {
-      switch (code) {
-        case "M": return "modified";
-        case "A": return "added";
-        case "D": return "deleted";
-        case "R": return "renamed";
-        case "?": return "untracked";
-        default:  return "modified";
+      return ({ M: "modified", A: "added", D: "deleted", R: "renamed", "?": "untracked" })[code] || "modified";
+    }
+
+    async function loadStatus() {
+      const r = await git("status --porcelain=v1");
+      if (r.code !== 0) return { err: r.stderr || "git status failed" };
+      return parsePorcelain(r.stdout);
+    }
+
+    async function loadDiff(file, source) {
+      if (source === "untracked") {
+        const r = await sh("head -c 4096 " + quote(file.path));
+        if (r.code !== 0) return [{ kind: "meta", text: "(binary or unreadable)" }];
+        const lines = (r.stdout || "").split("\n");
+        return [
+          { kind: "file", text: file.path + " (untracked)" },
+          ...lines.map((l) => ({ kind: "add", text: "+" + l })),
+        ];
+      }
+      const flag = source === "staged" ? "--cached" : "";
+      const r = await git("diff --no-color " + flag + " -- " + quote(file.path));
+      if (r.code !== 0) return [{ kind: "meta", text: r.stderr || "(no diff)" }];
+      if (!r.stdout.trim()) return [{ kind: "meta", text: "(no diff)" }];
+      return r.stdout.split("\n").map(classifyDiffLine);
+    }
+
+    function classifyDiffLine(line) {
+      if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff ")) return { kind: "file", text: line };
+      if (line.startsWith("@@")) return { kind: "hunk", text: line };
+      if (line.startsWith("+")) return { kind: "add", text: line };
+      if (line.startsWith("-")) return { kind: "del", text: line };
+      return { kind: "meta", text: line };
+    }
+
+    function renderDiffInto(node, lines) {
+      node.innerHTML = "";
+      for (const l of lines) {
+        node.appendChild(h("span", { class: "diff-line diff-" + l.kind }, l.text || " "));
       }
     }
 
-    async function stage(path)   { await git("add -- " + quote(path)); await render(); }
-    async function unstage(path) {
-      // `restore --staged` is git ≥ 2.23; fall back to `reset HEAD` otherwise.
-      const r = await git("restore --staged -- " + quote(path));
-      if (r.code !== 0) await git("reset HEAD -- " + quote(path));
-      await render();
-    }
-    async function discard(path, untracked) {
-      if (!confirm("Discard changes to " + path + "?")) return;
-      if (untracked) await git("clean -f -- " + quote(path));
-      else {
-        const r = await git("restore -- " + quote(path));
-        if (r.code !== 0) await git("checkout -- " + quote(path));
+    async function selectFile(file, source, diffNode) {
+      state.selectedFile = file ? `${source}:${file.path}` : null;
+      lastDiffPath = file?.path;
+      lastDiffSource = source;
+      document.querySelectorAll('.pane[data-pane="status"] .file-row').forEach((row) => {
+        row.classList.toggle("is-selected", row.dataset.key === state.selectedFile);
+      });
+      if (!file) {
+        diffNode.innerHTML = '<div class="status-diff-empty">Select a file to preview the diff.</div>';
+        return;
       }
-      await render();
+      diffNode.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
+      const lines = await loadDiff(file, source);
+      // If user clicked something else while we were loading, drop this result.
+      if (lastDiffPath !== file.path || lastDiffSource !== source) return;
+      renderDiffInto(diffNode, lines);
     }
-    async function stageAll()   { await git("add -A"); await render(); }
+
+    // ── Actions ───────────────────────────────────────────────────────────
+    async function withRefresh(fn, okMsg) {
+      try {
+        const r = await fn();
+        if (r && r.code !== 0) {
+          ui.toast(r.stderr || "Git error", "error");
+          return false;
+        }
+        if (okMsg) ui.toast(okMsg, "success");
+        await refresh();
+        return true;
+      } catch (e) {
+        ui.toast(String(e), "error");
+        return false;
+      }
+    }
+
+    const stage     = (p) => withRefresh(() => git("add -- " + quote(p)));
+    const stageAll  = () => withRefresh(() => git("add -A"), "Staged all changes");
+    async function unstage(p) {
+      const r = await git("restore --staged -- " + quote(p));
+      if (r.code !== 0) await git("reset HEAD -- " + quote(p));
+      await refresh();
+    }
     async function unstageAll() {
       const r = await git("restore --staged .");
       if (r.code !== 0) await git("reset HEAD .");
-      await render();
+      ui.toast("Unstaged all", "success");
+      await refresh();
     }
-
+    async function discard(file) {
+      const ok = await ui.confirm({
+        title: "Discard changes?",
+        body: `This will permanently revert ${file.path}. There's no undo for unstaged work.`,
+        danger: true, okLabel: "Discard",
+      });
+      if (!ok) return;
+      if (file.untracked) await git("clean -f -- " + quote(file.path));
+      else {
+        const r = await git("restore -- " + quote(file.path));
+        if (r.code !== 0) await git("checkout -- " + quote(file.path));
+      }
+      ui.toast("Discarded changes", "success");
+      await refresh();
+    }
     async function commit() {
-      const msg = commitMsg.trim();
-      if (!amend && !msg) { toast("Commit message required", "error"); return; }
-      const args = amend
+      const msg = state.commitMsg.trim();
+      if (!state.commitAmend && !msg) { ui.toast("Commit message required", "error"); return; }
+      const args = state.commitAmend
         ? "commit --amend" + (msg ? " -m " + quote(msg) : " --no-edit")
         : "commit -m " + quote(msg);
       const r = await git(args);
-      drawer.append("$ git " + args + "\n", "log-cmd");
-      if (r.stdout) drawer.append(r.stdout + "\n");
-      if (r.stderr) drawer.append(r.stderr + "\n", r.code === 0 ? null : "log-err");
       if (r.code === 0) {
-        toast(amend ? "Amended" : "Committed", "success");
-        commitMsg = "";
-        amend = false;
-        await readHead();
+        state.commitMsg = "";
+        state.commitAmend = false;
+        ui.toast(state.commitAmend ? "Amended commit" : "Committed", "success");
+        await refresh();
       } else {
-        toast("Commit failed", "error");
-        drawer.open();
+        ui.toast(r.stderr || "Commit failed", "error", 5000);
       }
-      await render();
+    }
+
+    // ── Render ────────────────────────────────────────────────────────────
+    function fileLabel(file) {
+      const { dir, name } = splitPath(file.path);
+      return h("span", { class: "file-path", title: file.path },
+        dir && h("span", { class: "file-dir" }, dir),
+        h("span", { class: "file-name" }, name),
+      );
+    }
+
+    function renderFileRow(file, source, diffNode) {
+      const key = `${source}:${file.path}`;
+      const isStaged = source === "staged";
+      const row = h("div", {
+        class: "file-row " + statusClass(file.code) + (state.selectedFile === key ? " is-selected" : ""),
+        dataset: { key },
+        onClick: () => selectFile(file, source, diffNode),
+      },
+        h("span", { class: "file-status" }, file.code),
+        fileLabel(file),
+        h("span", { class: "row-actions" },
+          isStaged
+            ? h("button", { class: "row-action", onClick: (e) => { e.stopPropagation(); unstage(file.path); } }, "unstage")
+            : h("button", { class: "row-action", onClick: (e) => { e.stopPropagation(); stage(file.path); } }, "stage"),
+          !isStaged && h("button", { class: "row-action danger", onClick: (e) => { e.stopPropagation(); discard(file); } }, "discard"),
+        ),
+      );
+      return row;
     }
 
     async function render() {
       const node = pane();
       node.innerHTML = "";
-      const r = await git("status --porcelain=v1");
-      if (r.code !== 0) {
-        node.append(h("div", { class: "banner-err" }, r.stderr || "git status failed"));
+      node.className = "pane is-active status-pane";
+
+      const status = await loadStatus();
+      if (status.err) {
+        node.append(h("div", { class: "empty" }, h("p", { class: "empty-title" }, "Could not read status"), h("p", { class: "empty-sub" }, status.err)));
         return;
       }
-      const { staged, unstaged } = parseStatus(r.stdout);
+      state.statusFiles = { staged: status.staged, unstaged: status.unstaged };
+      paintTopBar();
 
-      // Staged section
-      const stagedSec = h("div", { class: "section" });
-      stagedSec.append(
-        h("h3", { class: "section-title" },
+      const filter = state.fileFilter.toLowerCase();
+      const match = (f) => !filter || f.path.toLowerCase().includes(filter);
+      const staged = status.staged.filter(match);
+      const unstaged = status.unstaged.filter(match);
+
+      // ─── Toolbar ──────────────────────────────────────────────────────
+      const filterInput = h("input", {
+        class: "status-filter",
+        placeholder: "Filter files…",
+        value: state.fileFilter,
+        onInput: (e) => { state.fileFilter = e.target.value; render(); },
+      });
+      const toolbar = h("div", { class: "status-toolbar" },
+        filterInput,
+        h("button", { class: "btn-ghost", onClick: stageAll, disabled: unstaged.length === 0 }, "Stage all"),
+        h("button", { class: "btn-ghost", onClick: unstageAll, disabled: staged.length === 0 }, "Unstage all"),
+      );
+      node.append(toolbar);
+
+      // ─── Split (file list ↔ diff) ────────────────────────────────────
+      const diffNode = h("div", { class: "status-diff" });
+      diffNode.innerHTML = '<div class="status-diff-empty">Select a file to preview the diff.</div>';
+
+      const list = h("div", { class: "status-list" });
+
+      list.append(
+        h("div", { class: "file-section-title" },
           "Staged",
-          h("span", { class: "count-chip" }, String(staged.length)),
-          staged.length > 0 && h("button", { class: "btn-ghost", style: "margin-left:auto;font-size:10px;", onClick: unstageAll }, "Unstage all"),
+          h("span", { class: "count" }, String(staged.length)),
         ),
       );
       if (staged.length === 0) {
-        stagedSec.append(h("p", { class: "empty-sub", style: "padding:4px 8px;" }, "No staged changes"));
+        list.append(h("div", { class: "empty-files" }, "Nothing staged"));
       } else {
-        for (const f of staged) {
-          stagedSec.append(h("div", { class: "file-row " + statusClass(f.code) },
-            h("span", { class: "file-status" }, f.code),
-            h("span", { class: "file-path", title: f.path }, f.path),
-            h("span", { class: "file-actions" },
-              h("button", { class: "file-action", onClick: () => unstage(f.path) }, "unstage"),
-            ),
-          ));
-        }
+        staged.forEach((f) => list.append(renderFileRow(f, "staged", diffNode)));
       }
-      node.append(stagedSec);
 
-      // Unstaged section
-      const unstagedSec = h("div", { class: "section" });
-      unstagedSec.append(
-        h("h3", { class: "section-title" },
+      list.append(
+        h("div", { class: "file-section-title" },
           "Changes",
-          h("span", { class: "count-chip" }, String(unstaged.length)),
-          unstaged.length > 0 && h("button", { class: "btn-ghost", style: "margin-left:auto;font-size:10px;", onClick: stageAll }, "Stage all"),
+          h("span", { class: "count" }, String(unstaged.length)),
         ),
       );
       if (unstaged.length === 0) {
-        unstagedSec.append(h("p", { class: "empty-sub", style: "padding:4px 8px;" }, "Working tree clean"));
+        list.append(h("div", { class: "empty-files" }, status.unstaged.length === 0 ? "Working tree clean" : "Nothing matches filter"));
       } else {
-        for (const f of unstaged) {
-          unstagedSec.append(h("div", { class: "file-row " + statusClass(f.code) },
-            h("span", { class: "file-status" }, f.code),
-            h("span", { class: "file-path", title: f.path }, f.path),
-            h("span", { class: "file-actions" },
-              h("button", { class: "file-action", onClick: () => stage(f.path) }, "stage"),
-              h("button", { class: "file-action act-discard", onClick: () => discard(f.path, f.untracked) }, "discard"),
-            ),
-          ));
-        }
+        unstaged.forEach((f) => list.append(renderFileRow(f, "unstaged", diffNode)));
       }
-      node.append(unstagedSec);
 
-      // Commit box
-      const commitSec = h("div", { class: "section" });
-      commitSec.append(h("h3", { class: "section-title" }, "Commit"));
+      const split = h("div", { class: "status-split" }, list, diffNode);
+      node.append(split);
+
+      // Re-apply selection diff after re-render so picking a stage/unstage
+      // doesn't blank the diff pane each time.
+      if (state.selectedFile) {
+        const [src, ...rest] = state.selectedFile.split(":");
+        const path = rest.join(":");
+        const pool = src === "staged" ? status.staged : status.unstaged;
+        const file = pool.find((f) => f.path === path);
+        if (file) selectFile(file, src, diffNode);
+        else state.selectedFile = null;
+      }
+
+      // ─── Commit area ──────────────────────────────────────────────────
       const ta = h("textarea", {
-        class: "input",
-        placeholder: amend ? "Amend message (leave blank to keep)" : "Commit message…",
-        value: commitMsg,
-        onInput: (e) => { commitMsg = e.target.value; },
+        placeholder: state.commitAmend ? "Amend message (blank = keep HEAD's)" : "Commit message…",
+        value: state.commitMsg,
+        onInput: (e) => { state.commitMsg = e.target.value; },
+        onKeydown: (e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          }
+        },
       });
-      const optsRow = h("div", { class: "commit-options" });
-      const amendChk = h("input", { type: "checkbox", checked: amend, onChange: (e) => { amend = e.target.checked; render(); } });
-      optsRow.append(h("label", null, amendChk, "Amend HEAD"));
-      const submitBtn = h("button", { class: "btn-primary", style: "margin-left:auto;", onClick: commit }, amend ? "Amend commit" : "Commit");
-      if (staged.length === 0 && !amend) submitBtn.disabled = true;
-      optsRow.append(submitBtn);
-      commitSec.append(h("div", { class: "commit-box" }, ta, optsRow));
-      node.append(commitSec);
+      const amendChk = h("input", {
+        type: "checkbox",
+        checked: state.commitAmend,
+        onChange: (e) => { state.commitAmend = e.target.checked; render(); },
+      });
+      const submitBtn = h("button", { class: "btn-primary", onClick: commit },
+        state.commitAmend ? "Amend commit" : "Commit",
+        h("span", { class: "kbd" }, "⌘↵"),
+      );
+      if (!state.commitAmend && staged.length === 0) submitBtn.disabled = true;
+
+      node.append(
+        h("div", { class: "commit-area" },
+          ta,
+          h("div", { class: "commit-options" },
+            h("label", null, amendChk, "Amend HEAD"),
+            h("span", { class: "spacer" }),
+            submitBtn,
+          ),
+        ),
+      );
     }
 
     return { render };
   })();
 
-  // ── Branches tab ───────────────────────────────────────────────────────
+  // ── Branches tab ─────────────────────────────────────────────────────────
   const branchesTab = (() => {
-    const pane = () => document.getElementById("branches-pane");
+    const pane = () => document.querySelector('.pane[data-pane="branches"]');
     let newBranchName = "";
 
     async function loadBranches() {
-      // %1f = unit separator, safe even in weird branch names.
       const sep = "\x1f";
-      const r = await git(
-        "branch -a --format=" + quote("%(HEAD)" + sep + "%(refname:short)" + sep + "%(upstream:short)" + sep + "%(upstream:track)" + sep + "%(objectname:short)")
-      );
-      if (r.code !== 0) return [];
-      return r.stdout.split("\n").filter(Boolean).map((line) => {
+      const r = await git("branch -a --format=" + quote("%(HEAD)" + sep + "%(refname:short)" + sep + "%(upstream:short)" + sep + "%(upstream:track)" + sep + "%(objectname:short)"));
+      if (r.code !== 0) return { local: [], remote: [] };
+      const all = r.stdout.split("\n").filter(Boolean).map((line) => {
         const [head, name, upstream, track, sha] = line.split(sep);
         return {
           isCurrent: head === "*",
-          name,
-          upstream: upstream || null,
-          track: track || "",
-          sha,
+          name, upstream: upstream || null, track: track || "", sha,
           isRemote: name.startsWith("remotes/"),
         };
       });
+      return {
+        local: all.filter((b) => !b.isRemote),
+        remote: all.filter((b) => b.isRemote && !b.name.endsWith("/HEAD")),
+      };
     }
 
-    async function checkout(name) {
-      // For remote branches like "remotes/origin/feature", create a local
-      // tracking branch with the same short name.
-      let target = name;
-      let args = "checkout " + quote(target);
-      if (name.startsWith("remotes/")) {
-        const local = name.split("/").slice(2).join("/");
-        target = local;
-        args = "checkout -b " + quote(local) + " " + quote(name);
+    async function checkout(b) {
+      let args, label;
+      if (b.isRemote) {
+        const local = b.name.split("/").slice(2).join("/");
+        args = "checkout -b " + quote(local) + " " + quote(b.name);
+        label = local;
+      } else {
+        args = "checkout " + quote(b.name);
+        label = b.name;
       }
       const r = await git(args);
       if (r.code === 0) {
-        toast("Switched to " + target, "success");
-        await readHead();
-      } else {
-        drawer.append("$ git " + args + "\n", "log-cmd");
-        drawer.append(r.stderr + "\n", "log-err");
-        drawer.open();
-        toast("Checkout failed", "error");
-      }
-      await render();
+        ui.toast("Switched to " + label, "success");
+        await refresh();
+      } else ui.toast(r.stderr || "Checkout failed", "error", 5000);
     }
 
     async function createBranch() {
@@ -395,366 +556,414 @@
       if (!name) return;
       const r = await git("checkout -b " + quote(name));
       if (r.code === 0) {
-        toast("Created " + name, "success");
         newBranchName = "";
-        await readHead();
-      } else {
-        drawer.append(r.stderr + "\n", "log-err");
-        drawer.open();
-        toast("Create failed", "error");
-      }
-      await render();
+        ui.toast("Created " + name, "success");
+        await refresh();
+      } else ui.toast(r.stderr || "Create failed", "error", 5000);
     }
 
     async function deleteBranch(name) {
-      if (!confirm("Delete branch " + name + "?")) return;
+      const ok = await ui.confirm({
+        title: "Delete branch?",
+        body: `Delete local branch "${name}"? If it has unmerged commits, you'll be prompted to force-delete.`,
+        danger: true, okLabel: "Delete",
+      });
+      if (!ok) return;
       let r = await git("branch -d " + quote(name));
       if (r.code !== 0) {
-        if (!confirm("Branch not fully merged. Force-delete?")) return;
+        const force = await ui.confirm({
+          title: "Force delete?",
+          body: `"${name}" isn't fully merged. Force-deleting drops the unmerged commits.`,
+          danger: true, okLabel: "Force delete",
+        });
+        if (!force) return;
         r = await git("branch -D " + quote(name));
       }
-      if (r.code === 0) toast("Deleted " + name, "success");
-      else { drawer.append(r.stderr + "\n", "log-err"); drawer.open(); toast("Delete failed", "error"); }
-      await render();
+      if (r.code === 0) {
+        ui.toast("Deleted " + name, "success");
+        await refresh();
+      } else ui.toast(r.stderr || "Delete failed", "error", 5000);
     }
 
     async function render() {
       const node = pane();
       node.innerHTML = "";
+      node.className = "pane is-active branches-pane";
 
-      // Create-branch form
-      const form = h("div", { class: "branch-form" });
-      const input = h("input", {
-        class: "input",
+      const filterInput = h("input", {
+        class: "history-search",
+        placeholder: "Filter branches…",
+        value: state.branchFilter,
+        onInput: (e) => { state.branchFilter = e.target.value; render(); },
+      });
+      const newInput = h("input", {
+        class: "input", style: { maxWidth: "240px" },
         placeholder: "New branch name…",
         value: newBranchName,
         onInput: (e) => { newBranchName = e.target.value; },
         onKeydown: (e) => { if (e.key === "Enter") createBranch(); },
       });
-      form.append(input, h("button", { class: "btn-primary", onClick: createBranch }, "Create"));
-      node.append(form);
+      const top = h("div", { class: "branches-top" },
+        filterInput,
+        h("div", { style: { flex: "1" } }),
+        newInput,
+        h("button", { class: "btn-primary", onClick: createBranch, disabled: !newBranchName.trim() }, "Create"),
+      );
+      node.append(top);
 
-      const branches = await loadBranches();
-      const local = branches.filter((b) => !b.isRemote);
-      const remote = branches.filter((b) => b.isRemote);
+      const { local, remote } = await loadBranches();
+      state.branches = { local, remote };
 
-      const localSec = h("div", { class: "section" });
-      localSec.append(h("h3", { class: "section-title" }, "Local", h("span", { class: "count-chip" }, String(local.length))));
-      for (const b of local) {
-        const row = h("div", { class: "branch-row" + (b.isCurrent ? " is-current" : "") },
-          h("span", { class: "branch-marker" }, b.isCurrent ? "*" : ""),
+      const f = state.branchFilter.toLowerCase();
+      const match = (b) => !f || b.name.toLowerCase().includes(f);
+
+      const list = h("div", { class: "branches-list" });
+
+      const filteredLocal = local.filter(match);
+      list.append(h("div", { class: "branch-section-title" }, "Local", h("span", { class: "count" }, String(filteredLocal.length))));
+      if (filteredLocal.length === 0) list.append(h("div", { class: "empty-files" }, "No matching local branches"));
+      for (const b of filteredLocal) {
+        list.append(h("div", { class: "branch-row" + (b.isCurrent ? " is-current" : "") },
+          h("span", { class: "branch-marker" }, b.isCurrent ? "●" : ""),
           h("span", { class: "branch-name", title: b.name }, b.name),
-          h("span", { class: "branch-meta" }, b.upstream ? b.upstream + " " + b.track : ""),
+          h("span", { class: "branch-meta" }, b.upstream ? `${b.upstream} ${b.track}` : ""),
           h("span", { class: "branch-actions" },
-            !b.isCurrent && h("button", { class: "file-action", onClick: () => checkout(b.name) }, "switch"),
-            !b.isCurrent && h("button", { class: "file-action act-discard", onClick: () => deleteBranch(b.name) }, "delete"),
+            !b.isCurrent && h("button", { class: "row-action", onClick: () => checkout(b) }, "switch"),
+            !b.isCurrent && h("button", { class: "row-action danger", onClick: () => deleteBranch(b.name) }, "delete"),
           ),
-        );
-        localSec.append(row);
+        ));
       }
-      node.append(localSec);
 
-      if (remote.length > 0) {
-        const remoteSec = h("div", { class: "section" });
-        remoteSec.append(h("h3", { class: "section-title" }, "Remote", h("span", { class: "count-chip" }, String(remote.length))));
-        for (const b of remote) {
-          // Skip the symbolic origin/HEAD pointer.
-          if (b.name.endsWith("/HEAD")) continue;
-          const row = h("div", { class: "branch-row" },
+      const filteredRemote = remote.filter(match);
+      if (filteredRemote.length > 0) {
+        list.append(h("div", { class: "branch-section-title" }, "Remote", h("span", { class: "count" }, String(filteredRemote.length))));
+        for (const b of filteredRemote) {
+          list.append(h("div", { class: "branch-row" },
             h("span", { class: "branch-marker" }, ""),
             h("span", { class: "branch-name", title: b.name }, b.name),
             h("span", { class: "branch-meta" }, b.sha),
             h("span", { class: "branch-actions" },
-              h("button", { class: "file-action", onClick: () => checkout(b.name) }, "check out"),
+              h("button", { class: "row-action", onClick: () => checkout(b) }, "check out"),
             ),
-          );
-          remoteSec.append(row);
+          ));
         }
-        node.append(remoteSec);
       }
+
+      node.append(list);
     }
 
     return { render };
   })();
 
-  // ── Sync tab ───────────────────────────────────────────────────────────
+  // ── Sync tab ─────────────────────────────────────────────────────────────
   const syncTab = (() => {
-    const pane = () => document.getElementById("sync-pane");
+    const pane = () => document.querySelector('.pane[data-pane="sync"]');
+    let running = null; // action name currently running, for visual feedback
+
+    async function runWithFeedback(name, cmd, okMsg) {
+      running = name;
+      render();
+      ui.toast(`Running ${name}…`, "info", 1000);
+      const r = await sh(cmd, { timeout: 120000 });
+      running = null;
+      if (r.code === 0) {
+        ui.toast(okMsg || `${name} complete`, "success");
+      } else {
+        ui.toast(r.stderr || `${name} failed`, "error", 5000);
+      }
+      await refresh();
+      render();
+    }
 
     async function pull(rebase) {
-      const args = "pull" + (rebase ? " --rebase" : "") + " --no-edit";
-      const r = await streamCmd("git " + args);
-      if (r.code === 0) toast("Pull complete", "success");
-      else toast("Pull failed", "error");
-      await readHead();
-      render();
+      const args = "git pull" + (rebase ? " --rebase" : "") + " --no-edit";
+      await runWithFeedback(rebase ? "pull --rebase" : "pull", args);
     }
     async function push(force) {
-      // --force-with-lease is the safe force: refuses if remote moved since
-      // last fetch. We never expose plain --force.
-      const args = "push" + (force ? " --force-with-lease" : "") + (state.upstream ? "" : " -u origin " + quote(state.branch));
-      const r = await streamCmd("git " + args);
-      if (r.code === 0) toast("Push complete", "success");
-      else toast("Push failed", "error");
-      await readHead();
-      render();
+      const upstreamArgs = state.upstream ? "" : " -u origin " + quote(state.branch);
+      const args = "git push" + (force ? " --force-with-lease" : "") + upstreamArgs;
+      await runWithFeedback(force ? "push --force-with-lease" : "push", args);
     }
     async function fetch(prune) {
-      const args = "fetch --all" + (prune ? " --prune" : "");
-      const r = await streamCmd("git " + args);
-      if (r.code === 0) toast("Fetch complete", "success");
-      else toast("Fetch failed", "error");
-      await readHead();
-      render();
+      const args = "git fetch --all" + (prune ? " --prune" : "");
+      await runWithFeedback(prune ? "fetch + prune" : "fetch", args);
     }
 
-    async function render() {
+    function actionCard({ name, desc, onClick, danger }) {
+      const isRunning = running === name;
+      return h("button", {
+        class: "sync-action" + (danger ? " danger" : "") + (isRunning ? " running" : ""),
+        disabled: !!running,
+        onClick,
+      },
+        h("div", { class: "name" }, name, isRunning && h("span", { class: "spinner", style: { marginLeft: "auto" } })),
+        h("div", { class: "desc" }, desc),
+      );
+    }
+
+    function render() {
       const node = pane();
       node.innerHTML = "";
+      node.className = "pane is-active sync-pane";
 
-      const actions = h("div", { class: "sync-actions" });
-      actions.append(
-        h("button", { class: "btn-primary", onClick: () => fetch(false) }, "Fetch"),
-        h("button", { class: "btn", onClick: () => fetch(true) }, "Fetch + prune"),
-        h("button", { class: "btn-primary", onClick: () => pull(false) }, "Pull"),
-        h("button", { class: "btn", onClick: () => pull(true) }, "Pull --rebase"),
-        h("button", { class: "btn-primary", onClick: () => push(false) }, state.upstream ? "Push" : "Push (set upstream)"),
-        h("button", { class: "btn-danger", onClick: () => push(true) }, "Push --force-with-lease"),
+      const summary = h("div", { class: "sync-summary" },
+        h("div", { class: "label" }, "Branch · Tracking"),
+        h("div", { class: "value" },
+          state.branch || "(none)",
+          h("span", { class: "delta" }, state.upstream ? "→ " + state.upstream : "no upstream"),
+          state.aheadBehind && h("span", { class: "delta" },
+            state.aheadBehind.ahead > 0 && h("span", { class: "ahead" }, "↑" + state.aheadBehind.ahead),
+            state.aheadBehind.behind > 0 && h("span", { class: "behind" }, "↓" + state.aheadBehind.behind),
+            state.aheadBehind.ahead + state.aheadBehind.behind === 0 ? "up to date" : null,
+          ),
+        ),
       );
-      node.append(actions);
+      node.append(summary);
 
-      const status = h("div", { class: "sync-status" });
-      if (state.upstream) {
-        let line = "Tracking " + state.upstream;
-        if (state.aheadBehind) {
-          if (state.aheadBehind.ahead || state.aheadBehind.behind) {
-            line += " · ahead " + state.aheadBehind.ahead + ", behind " + state.aheadBehind.behind;
-          } else {
-            line += " · up to date";
-          }
-        }
-        status.textContent = line;
-      } else {
-        status.textContent = "No upstream set — first push will use `-u origin " + state.branch + "`.";
-      }
-      node.append(status);
+      const grid = h("div", { class: "sync-grid" },
+        actionCard({ name: "Fetch",            desc: "Update remote refs without merging.",            onClick: () => fetch(false) }),
+        actionCard({ name: "Fetch + prune",    desc: "Also remove refs to branches gone from remote.", onClick: () => fetch(true) }),
+        actionCard({ name: "Pull",             desc: "Fetch + merge upstream into HEAD.",              onClick: () => pull(false) }),
+        actionCard({ name: "Pull --rebase",    desc: "Fetch then rebase HEAD onto upstream.",          onClick: () => pull(true) }),
+        actionCard({ name: "Push",             desc: state.upstream ? "Push HEAD to upstream." : "Push and set upstream to origin/" + state.branch + ".", onClick: () => push(false) }),
+        actionCard({ name: "Push --force-with-lease", danger: true, desc: "Overwrite remote only if it hasn't moved since fetch.", onClick: () => push(true) }),
+      );
+      node.append(grid);
     }
 
     return { render };
   })();
 
-  // ── History tab ────────────────────────────────────────────────────────
+  // ── History tab ──────────────────────────────────────────────────────────
   const historyTab = (() => {
-    const pane = () => document.getElementById("history-pane");
-    let expandedSha = null;
-    let cachedLog = [];
+    const pane = () => document.querySelector('.pane[data-pane="history"]');
 
-    async function loadLog() {
+    async function loadLog(filter) {
       const sep = "\x1f";
-      const r = await git(
-        "log --no-color --pretty=format:" + quote("%h" + sep + "%s" + sep + "%an" + sep + "%ar") + " -n 100"
-      );
+      const grep = filter ? " --grep=" + quote(filter) + " -i" : "";
+      const r = await git("log --no-color" + grep + " --pretty=format:" + quote("%h" + sep + "%s" + sep + "%an" + sep + "%ar" + sep + "%H") + " -n 100");
       if (r.code !== 0) return [];
       return r.stdout.split("\n").filter(Boolean).map((line) => {
-        const [sha, msg, author, when] = line.split(sep);
-        return { sha, msg, author, when };
+        const [sha, msg, author, when, fullSha] = line.split(sep);
+        return { sha, msg, author, when, fullSha };
       });
     }
 
-    function renderDiff(sha) {
-      const sec = h("div", { class: "diff-view" });
-      sec.textContent = "Loading diff…";
-      git("show --no-color --stat -p " + quote(sha)).then((r) => {
-        sec.innerHTML = "";
-        for (const line of r.stdout.split("\n")) {
-          const span = document.createElement("span");
-          if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff ")) span.className = "diff-file";
-          else if (line.startsWith("+")) span.className = "diff-add";
-          else if (line.startsWith("-")) span.className = "diff-del";
-          else if (line.startsWith("@@")) span.className = "diff-hunk";
-          span.textContent = line + "\n";
-          sec.appendChild(span);
-        }
-      });
-      return sec;
+    async function renderDetail(detailNode, commit) {
+      detailNode.innerHTML = "";
+      const header = h("div", { class: "commit-header" },
+        h("div", { class: "row" }, h("span", { class: "label" }, "sha"), h("span", { class: "val sha" }, commit.fullSha)),
+        h("div", { class: "row" }, h("span", { class: "label" }, "author"), h("span", { class: "val" }, `${commit.author} · ${commit.when}`)),
+        h("div", { class: "row" }, h("span", { class: "label" }, "msg"), h("span", { class: "val msg" }, commit.msg)),
+      );
+      detailNode.append(header);
+
+      const diffWrap = h("div");
+      detailNode.append(diffWrap);
+      diffWrap.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
+      const r = await git("show --no-color --stat -p " + quote(commit.sha));
+      diffWrap.innerHTML = "";
+      for (const line of r.stdout.split("\n")) {
+        let cls = "diff-meta";
+        if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff ")) cls = "diff-file";
+        else if (line.startsWith("@@")) cls = "diff-hunk";
+        else if (line.startsWith("+")) cls = "diff-add";
+        else if (line.startsWith("-")) cls = "diff-del";
+        diffWrap.append(h("span", { class: "diff-line " + cls }, line || " "));
+      }
     }
 
     async function render() {
       const node = pane();
       node.innerHTML = "";
-      cachedLog = await loadLog();
-      state.log = cachedLog;
-      const list = h("div", { class: "log-list" });
-      for (const c of cachedLog) {
-        const row = h("div", { class: "log-row" },
-          h("span", { class: "log-sha" }, c.sha),
-          h("span", { class: "log-msg", title: c.msg }, c.msg),
-          h("span", { class: "log-author" }, c.author + " · " + c.when),
-        );
-        row.addEventListener("click", () => {
-          expandedSha = expandedSha === c.sha ? null : c.sha;
-          render();
-        });
-        list.append(row);
-        if (expandedSha === c.sha) list.append(renderDiff(c.sha));
+      node.className = "pane is-active history-pane";
+
+      const search = h("input", {
+        class: "history-search",
+        placeholder: "Filter commits by message…",
+        value: state.historyFilter,
+        onInput: (e) => { state.historyFilter = e.target.value; clearTimeout(searchTimer); searchTimer = setTimeout(render, 250); },
+      });
+      node.append(h("div", { class: "history-top" }, search));
+
+      const list = h("div", { class: "history-list" });
+      const detail = h("div", { class: "history-detail" });
+      detail.innerHTML = '<div class="history-detail-empty">Pick a commit to inspect.</div>';
+      node.append(h("div", { class: "history-split" }, list, detail));
+
+      const commits = await loadLog(state.historyFilter);
+      state.log = commits;
+      if (commits.length === 0) {
+        list.append(h("div", { class: "empty-files" }, "No commits match"));
+        return;
       }
-      if (cachedLog.length === 0) {
-        node.append(h("p", { class: "empty-sub" }, "No commits yet"));
-      } else {
-        node.append(list);
+      for (const c of commits) {
+        const row = h("div", {
+          class: "log-row" + (state.selectedCommit === c.sha ? " is-selected" : ""),
+          onClick: () => {
+            state.selectedCommit = c.sha;
+            document.querySelectorAll(".log-row").forEach((r) => r.classList.toggle("is-selected", r.dataset.sha === c.sha));
+            renderDetail(detail, c);
+          },
+          dataset: { sha: c.sha },
+        },
+          h("span", { class: "log-sha" }, c.sha),
+          h("span", null,
+            h("span", { class: "log-msg-line", title: c.msg }, c.msg),
+            h("span", { class: "log-meta" }, `${c.author} · ${c.when}`),
+          ),
+        );
+        list.append(row);
+      }
+      // Re-show last detail if it matches
+      if (state.selectedCommit) {
+        const cur = commits.find((c) => c.sha === state.selectedCommit);
+        if (cur) renderDetail(detail, cur);
       }
     }
 
+    let searchTimer = 0;
     return { render };
   })();
 
-  // ── Rebase tab ─────────────────────────────────────────────────────────
+  // ── Rebase tab ───────────────────────────────────────────────────────────
   const rebaseTab = (() => {
-    const pane = () => document.getElementById("rebase-pane");
-    let target = "HEAD~5";
+    const pane = () => document.querySelector('.pane[data-pane="rebase"]');
 
-    async function loadCommitsSince(target) {
+    async function buildPlan() {
       const sep = "\x1f";
-      // --reverse so we list oldest→newest, which is the order the rebase
-      // todo file expects.
-      const r = await git(
-        "log --reverse --no-color --pretty=format:" + quote("%h" + sep + "%s") + " " + quote(target) + "..HEAD"
-      );
+      const r = await git("log --reverse --no-color --pretty=format:" + quote("%h" + sep + "%s") + " " + quote(state.rebaseTarget) + "..HEAD");
       if (r.code !== 0) {
-        return { err: r.stderr || "Bad rev " + target, commits: [] };
+        ui.toast(r.stderr || "Bad target", "error", 5000);
+        state.rebasePlan = [];
+        render();
+        return;
       }
-      const commits = r.stdout.split("\n").filter(Boolean).map((line) => {
+      state.rebasePlan = r.stdout.split("\n").filter(Boolean).map((line) => {
         const [sha, msg] = line.split(sep);
         return { sha, msg, op: "pick" };
       });
-      return { commits };
-    }
-
-    async function buildPlan() {
-      const { err, commits } = await loadCommitsSince(target);
-      if (err) {
-        pane().innerHTML = "";
-        pane().append(h("div", { class: "banner-err" }, err));
-        return;
-      }
-      state.rebasePlan = commits;
       render();
     }
 
     async function startRebase() {
-      if (state.rebasePlan.length === 0) { toast("Nothing to rebase", "error"); return; }
-      // git rebase rejects `pick` as the first todo line being squash/fixup,
-      // so refuse if the user squashed everything onto nothing.
+      if (state.rebasePlan.length === 0) return;
       if (state.rebasePlan[0].op === "squash" || state.rebasePlan[0].op === "fixup") {
-        toast("First commit cannot be 'squash' — change it to 'pick'.", "error");
+        ui.toast("First commit cannot be 'squash' — change to 'pick'", "error", 4000);
         return;
       }
-      const todoLines = state.rebasePlan
-        .filter((c) => c.op !== "drop")
-        .map((c) => c.op + " " + c.sha + " " + c.msg)
-        .join("\n");
-      // Stash our todo to a tmp file, then have GIT_SEQUENCE_EDITOR overwrite
-      // git's auto-generated todo with ours. GIT_EDITOR=true ensures squash's
-      // combined-message editor is auto-accepted (we keep git's default
-      // merged message — user can amend after).
+      const todo = state.rebasePlan.filter((c) => c.op !== "drop").map((c) => `${c.op} ${c.sha} ${c.msg}`).join("\n");
       const tmp = "/tmp/porta-rebase-todo-" + Date.now();
-      const writeR = await sh("cat > " + quote(tmp) + " <<'PORTA_EOF'\n" + todoLines + "\nPORTA_EOF");
-      if (writeR.code !== 0) { toast("Could not write todo file", "error"); return; }
-
-      const cmd = "GIT_SEQUENCE_EDITOR=" + quote("cp " + tmp) + " GIT_EDITOR=true git rebase -i " + quote(target);
-      const r = await streamCmd(cmd);
+      const write = await sh("cat > " + quote(tmp) + " <<'PORTA_EOF'\n" + todo + "\nPORTA_EOF");
+      if (write.code !== 0) { ui.toast("Could not write todo", "error"); return; }
+      const cmd = "GIT_SEQUENCE_EDITOR=" + quote("cp " + tmp) + " GIT_EDITOR=true git rebase -i " + quote(state.rebaseTarget);
+      ui.toast("Rebasing…", "info", 1500);
+      const r = await sh(cmd, { timeout: 120000 });
       await sh("rm -f " + quote(tmp));
       if (r.code === 0) {
-        toast("Rebase complete", "success");
         state.rebasePlan = [];
-        await readHead();
+        ui.toast("Rebase complete", "success");
       } else {
-        toast("Rebase paused — resolve conflicts in your editor", "error");
+        ui.toast("Rebase paused — resolve conflicts in your editor, stage, then click Continue", "error", 6000);
       }
-      await detectRebaseInProgress();
-      render();
+      await refresh();
     }
 
     async function abortRebase() {
-      const r = await streamCmd("git rebase --abort");
-      if (r.code === 0) toast("Rebase aborted", "success");
-      await detectRebaseInProgress();
-      render();
+      const r = await git("rebase --abort");
+      if (r.code === 0) ui.toast("Rebase aborted", "success");
+      else ui.toast(r.stderr || "Abort failed", "error");
+      await refresh();
     }
 
     async function continueRebase() {
-      const r = await streamCmd("GIT_EDITOR=true git rebase --continue");
-      if (r.code === 0) {
-        toast("Rebase continued", "success");
-        await readHead();
-      }
-      await detectRebaseInProgress();
+      const r = await sh("GIT_EDITOR=true git rebase --continue", { timeout: 60000 });
+      if (r.code === 0) ui.toast("Rebase continued", "success");
+      else ui.toast(r.stderr || "Continue failed", "error", 5000);
+      await refresh();
+    }
+
+    function move(i, dir) {
+      const j = i + dir;
+      if (j < 0 || j >= state.rebasePlan.length) return;
+      const arr = state.rebasePlan;
+      [arr[i], arr[j]] = [arr[j], arr[i]];
       render();
     }
 
     function render() {
       const node = pane();
       node.innerHTML = "";
+      node.className = "pane is-active rebase-pane";
 
       if (state.rebaseInProgress) {
-        node.append(h("div", { class: "in-progress-banner" }, "A rebase is in progress. Resolve conflicts in your editor, stage the fixes, then continue."));
-        node.append(h("div", { class: "rebase-actions" },
-          h("button", { class: "btn-primary", onClick: continueRebase }, "Continue"),
-          h("button", { class: "btn-danger", onClick: abortRebase }, "Abort"),
-        ));
+        node.append(
+          h("div", { class: "in-progress-banner" },
+            h("svg", { viewBox: "0 0 12 12", width: "14", height: "14", fill: "none", html: '<path d="M6 1l5 9H1L6 1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 5v2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="6" cy="9" r="0.5" fill="currentColor"/>' }),
+            h("div", null,
+              h("strong", null, "Rebase in progress."),
+              h("p", { style: { margin: "4px 0 0", color: "var(--text-mute)", fontSize: "11px" } },
+                "Resolve conflicts in your editor, stage them from the Status tab, then come back here and click Continue."),
+            ),
+          ),
+          h("div", { class: "rebase-actions" },
+            h("button", { class: "btn-primary", onClick: continueRebase }, "Continue"),
+            h("button", { class: "btn-danger", onClick: abortRebase }, "Abort"),
+          ),
+        );
         return;
       }
 
-      const form = h("div", { class: "rebase-form" });
-      const input = h("input", {
-        class: "input",
-        placeholder: "Target (e.g. HEAD~5, main, abc123)",
-        value: target,
-        onInput: (e) => { target = e.target.value; },
+      const targetInput = h("input", {
+        class: "input", style: { maxWidth: "280px" },
+        placeholder: "Target ref (e.g. HEAD~5, main, abc123)",
+        value: state.rebaseTarget,
+        onInput: (e) => { state.rebaseTarget = e.target.value; },
         onKeydown: (e) => { if (e.key === "Enter") buildPlan(); },
       });
-      form.append(input, h("button", { class: "btn-primary", onClick: buildPlan }, "Plan rebase"));
-      node.append(form);
+      node.append(h("div", { class: "rebase-form" }, targetInput, h("button", { class: "btn-primary", onClick: buildPlan }, "Plan rebase")));
 
       if (state.rebasePlan.length === 0) {
-        node.append(h("p", { class: "empty-sub" },
-          "Pick a target ref. The commits between it and HEAD will appear here so you can pick / squash / drop each one."
+        node.append(h("p", { class: "empty-sub", style: { padding: "12px" } },
+          "Pick a target ref. Commits between it and HEAD will appear here for you to pick / squash / fixup / drop and (optionally) reorder.",
         ));
         return;
       }
 
-      const list = h("div", { class: "section" });
       for (let i = 0; i < state.rebasePlan.length; i++) {
         const c = state.rebasePlan[i];
-        const select = h("select", { class: "input",
+        const sel = h("select", {
+          class: "input",
           onChange: (e) => { c.op = e.target.value; render(); },
         });
         for (const op of ["pick", "squash", "fixup", "drop"]) {
-          const opt = h("option", { value: op, selected: c.op === op }, op);
-          select.append(opt);
+          sel.append(h("option", { value: op, selected: c.op === op }, op));
         }
-        const row = h("div", { class: "rebase-todo-row" + (c.op === "drop" ? " is-drop" : "") },
-          select,
-          h("span", { class: "log-sha" }, c.sha),
-          h("span", { class: "log-msg", title: c.msg }, c.msg),
+        const grip = h("span", { class: "grip", title: "Move up/down" },
+          h("button", { class: "row-action", onClick: () => move(i, -1), disabled: i === 0 }, "↑"),
+          h("button", { class: "row-action", onClick: () => move(i, +1), disabled: i === state.rebasePlan.length - 1 }, "↓"),
         );
-        list.append(row);
+        node.append(h("div", { class: "rebase-todo-row" + (c.op === "drop" ? " is-drop" : "") },
+          grip,
+          sel,
+          h("span", { class: "log-sha" }, c.sha),
+          h("span", { class: "log-msg-line", title: c.msg }, c.msg),
+        ));
       }
-      node.append(list);
 
       node.append(h("div", { class: "rebase-actions" },
         h("button", { class: "btn-primary", onClick: startRebase }, "Start rebase"),
-        h("button", { class: "btn-ghost", onClick: () => { state.rebasePlan = []; render(); } }, "Clear plan"),
+        h("button", { class: "btn-ghost", onClick: () => { state.rebasePlan = []; render(); } }, "Clear"),
       ));
     }
 
     return { render };
   })();
 
-  // ── Stash tab ──────────────────────────────────────────────────────────
+  // ── Stash tab ────────────────────────────────────────────────────────────
   const stashTab = (() => {
-    const pane = () => document.getElementById("stash-pane");
-    let stashMsg = "";
+    const pane = () => document.querySelector('.pane[data-pane="stash"]');
+    let msg = "";
     let includeUntracked = false;
 
     async function loadStash() {
@@ -762,148 +971,164 @@
       const r = await git("stash list --pretty=format:" + quote("%gd" + sep + "%s"));
       if (r.code !== 0) return [];
       return r.stdout.split("\n").filter(Boolean).map((line) => {
-        const [ref, msg] = line.split(sep);
-        return { ref, msg };
+        const [ref, m] = line.split(sep);
+        return { ref, msg: m };
       });
     }
 
-    async function saveStash() {
-      const args = "stash push" + (includeUntracked ? " -u" : "") + (stashMsg.trim() ? " -m " + quote(stashMsg.trim()) : "");
+    async function save() {
+      const args = "stash push" + (includeUntracked ? " -u" : "") + (msg.trim() ? " -m " + quote(msg.trim()) : "");
       const r = await git(args);
-      if (r.code === 0) { toast("Stashed", "success"); stashMsg = ""; }
-      else { drawer.append(r.stderr + "\n", "log-err"); drawer.open(); toast("Stash failed", "error"); }
-      await render();
+      if (r.code === 0) {
+        msg = "";
+        ui.toast("Stashed", "success");
+        await refresh();
+      } else ui.toast(r.stderr || "Stash failed", "error", 5000);
     }
 
-    async function applyStash(ref) {
+    async function apply(ref) {
       const r = await git("stash apply " + quote(ref));
-      if (r.code === 0) toast("Applied " + ref, "success");
-      else { drawer.append(r.stderr + "\n", "log-err"); drawer.open(); toast("Apply failed", "error"); }
-      await render();
+      if (r.code === 0) ui.toast("Applied " + ref, "success");
+      else ui.toast(r.stderr || "Apply failed", "error", 5000);
+      await refresh();
     }
-    async function popStash(ref) {
+    async function pop(ref) {
       const r = await git("stash pop " + quote(ref));
-      if (r.code === 0) toast("Popped " + ref, "success");
-      else { drawer.append(r.stderr + "\n", "log-err"); drawer.open(); toast("Pop failed", "error"); }
-      await render();
+      if (r.code === 0) ui.toast("Popped " + ref, "success");
+      else ui.toast(r.stderr || "Pop failed", "error", 5000);
+      await refresh();
     }
-    async function dropStash(ref) {
-      if (!confirm("Drop " + ref + "?")) return;
+    async function drop(ref) {
+      const ok = await ui.confirm({ title: "Drop stash?", body: `Permanently drop ${ref}?`, danger: true, okLabel: "Drop" });
+      if (!ok) return;
       const r = await git("stash drop " + quote(ref));
-      if (r.code === 0) toast("Dropped " + ref, "success");
-      await render();
+      if (r.code === 0) ui.toast("Dropped " + ref, "success");
+      else ui.toast(r.stderr || "Drop failed", "error", 5000);
+      await refresh();
     }
 
     async function render() {
       const node = pane();
       node.innerHTML = "";
+      node.className = "pane is-active stash-pane";
 
-      const form = h("div", { class: "stash-form" });
-      const input = h("input", {
-        class: "input",
+      const msgInput = h("input", {
+        class: "input", style: { maxWidth: "320px" },
         placeholder: "Stash message (optional)",
-        value: stashMsg,
-        onInput: (e) => { stashMsg = e.target.value; },
+        value: msg,
+        onInput: (e) => { msg = e.target.value; },
+        onKeydown: (e) => { if (e.key === "Enter") save(); },
       });
-      const chk = h("input", { type: "checkbox", checked: includeUntracked, onChange: (e) => { includeUntracked = e.target.checked; } });
-      form.append(input,
-        h("label", { class: "commit-options", style: "white-space:nowrap;" }, chk, "include untracked"),
-        h("button", { class: "btn-primary", onClick: saveStash }, "Stash"),
-      );
-      node.append(form);
+      const untrackedChk = h("input", { type: "checkbox", checked: includeUntracked, onChange: (e) => { includeUntracked = e.target.checked; } });
+      node.append(h("div", { class: "stash-top" },
+        msgInput,
+        h("label", { class: "commit-options", style: { whiteSpace: "nowrap" } }, untrackedChk, "include untracked"),
+        h("button", { class: "btn-primary", onClick: save }, "Stash"),
+      ));
 
       const stashes = await loadStash();
+      state.stashes = stashes;
+      state.stashCount = stashes.length;
+      paintTopBar();
+
+      const list = h("div", { class: "stash-list" });
       if (stashes.length === 0) {
-        node.append(h("p", { class: "empty-sub" }, "No stashes"));
-        return;
+        list.append(h("div", { class: "empty-files" }, "No stashes"));
+      } else {
+        for (const s of stashes) {
+          list.append(h("div", { class: "stash-row" },
+            h("span", { class: "stash-idx" }, s.ref),
+            h("span", { class: "stash-msg", title: s.msg }, s.msg),
+            h("span", { class: "stash-actions" },
+              h("button", { class: "row-action", onClick: () => apply(s.ref) }, "apply"),
+              h("button", { class: "row-action", onClick: () => pop(s.ref) }, "pop"),
+              h("button", { class: "row-action danger", onClick: () => drop(s.ref) }, "drop"),
+            ),
+          ));
+        }
       }
-      const sec = h("div", { class: "section" });
-      for (const s of stashes) {
-        const row = h("div", { class: "stash-row" },
-          h("span", { class: "stash-idx" }, s.ref),
-          h("span", { class: "stash-msg", title: s.msg }, s.msg),
-          h("span", { class: "stash-actions" },
-            h("button", { class: "file-action", onClick: () => applyStash(s.ref) }, "apply"),
-            h("button", { class: "file-action", onClick: () => popStash(s.ref) }, "pop"),
-            h("button", { class: "file-action act-discard", onClick: () => dropStash(s.ref) }, "drop"),
-          ),
-        );
-        sec.append(row);
-      }
-      node.append(sec);
+      node.append(list);
     }
 
     return { render };
   })();
 
-  // ── No-repo bootstrap ──────────────────────────────────────────────────
+  // ── No-repo bootstrap ────────────────────────────────────────────────────
   async function renderNoRepo() {
-    const root = document.querySelector(".panes");
-    if (!root) return;
-    root.innerHTML = "";
-    const tpl = document.getElementById("tpl-no-repo");
-    const node = tpl.content.cloneNode(true);
-    const initBtn = node.querySelector('[data-act="init"]');
-    // Without a root_dir, `git init` would init Porta's own launch dir —
-    // safer to disable the button and explain.
+    const panes = $(".panes");
+    panes.innerHTML = "";
+    const tpl = $("#tpl-no-repo");
+    const wrap = h("section", { class: "pane is-active", dataset: { pane: "status" } });
+    wrap.append(tpl.content.cloneNode(true));
+    const initBtn = wrap.querySelector('[data-act="init"]');
     if (!bridge.app.rootDir) {
       initBtn.disabled = true;
       initBtn.textContent = "App has no root_dir";
-      const sub = node.querySelector(".empty-sub");
+      const sub = wrap.querySelector(".empty-sub");
       if (sub) sub.textContent = "Set this app's root directory in App Settings to enable git.";
     } else {
       initBtn.addEventListener("click", async () => {
         const r = await git("init");
-        drawer.append(r.stdout || r.stderr || "", r.code === 0 ? null : "log-err");
         if (r.code === 0) {
-          toast("Initialized git repo", "success");
+          ui.toast("Initialized git repo", "success");
           await init();
-        } else toast("git init failed", "error");
+        } else ui.toast(r.stderr || "git init failed", "error");
       });
     }
-    const wrap = h("section", { class: "pane is-active" });
-    const inner = h("div", { class: "pane-inner" });
-    inner.append(node);
-    wrap.append(inner);
-    root.append(wrap);
+    panes.appendChild(wrap);
   }
 
-  // ── Init ───────────────────────────────────────────────────────────────
+  // ── Refresh: probes + re-render active tab ───────────────────────────────
+  async function refresh() {
+    const btn = $("#refresh-btn");
+    if (btn) btn.classList.add("spinning");
+    try {
+      await readHead();
+      await detectRebase();
+      await probeStashCount();
+      paintTopBar();
+      await renderActiveTab();
+    } finally {
+      if (btn) btn.classList.remove("spinning");
+    }
+  }
+
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────
+  function bindKeys() {
+    window.addEventListener("keydown", (e) => {
+      // Ignore typing in inputs/textareas.
+      const target = e.target;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+      // Don't fight Cmd/Ctrl + key — those are reserved for browser/host.
+      if (e.metaKey || e.ctrlKey) return;
+      const k = e.key.toLowerCase();
+      if (["1", "2", "3", "4", "5", "6"].includes(k)) {
+        const tab = ["status", "branches", "sync", "history", "rebase", "stash"][parseInt(k, 10) - 1];
+        e.preventDefault();
+        activateTab(tab);
+      } else if (k === "r") {
+        e.preventDefault();
+        refresh();
+      }
+    });
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────
   async function init() {
     bridge.ui.setTitle("Git — " + bridge.app.name);
-
-    // Wire drawer DOM (templates were rendered server-side).
-    drawer.el = document.getElementById("drawer");
-    drawer.out = document.getElementById("drawer-output");
-    document.getElementById("drawer-clear").addEventListener("click", () => drawer.clear());
-    document.getElementById("drawer-toggle").addEventListener("click", () => {
-      if (drawer.el.classList.contains("is-open")) drawer.close();
-      else drawer.open();
-    });
-    document.getElementById("refresh-btn").addEventListener("click", refresh);
-    document.querySelectorAll(".tab").forEach((t) => {
-      t.addEventListener("click", () => activateTab(t.dataset.tab));
-    });
+    $("#refresh-btn").addEventListener("click", refresh);
+    document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => activateTab(t.dataset.tab)));
+    bindKeys();
 
     if (!await detectRepo()) {
       await renderNoRepo();
       return;
     }
     await readHead();
-    await detectRebaseInProgress();
+    await detectRebase();
+    await probeStashCount();
+    paintTopBar();
     activateTab("status");
-  }
-
-  async function refresh() {
-    const btn = document.getElementById("refresh-btn");
-    if (btn) btn.classList.add("spinning");
-    try {
-      await readHead();
-      await detectRebaseInProgress();
-      await renderActiveTab();
-    } finally {
-      if (btn) btn.classList.remove("spinning");
-    }
   }
 
   document.addEventListener("DOMContentLoaded", init);
