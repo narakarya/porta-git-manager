@@ -1,25 +1,16 @@
 /* Git Manager — palette matched to Porta's dark UI. */
 :root {
-  --bg:        #0d0d0f;
-  --bg-pane:  #131316;
-  --bg-card:  #1a1a1c;
-  --bg-input: #08080a;
-  --bg-hover: rgba(255, 255, 255, 0.04);
-  --bg-selected: rgba(96, 165, 250, 0.10);
-  --border:   rgba(255, 255, 255, 0.06);
-  --border-hi:rgba(255, 255, 255, 0.10);
-  --text:     #e4e4e7;
-  --text-mute:#71717a;
-  --text-dim: #52525b;
-  --blue:     #60a5fa;
-  --emerald:  #34d399;
-  --amber:    #fbbf24;
-  --red:      #f87171;
-  --violet:   #a78bfa;
-  --orange:   #fb923c;
-
-  --diff-add-bg: rgba(52, 211, 153, 0.08);
-  --diff-del-bg: rgba(248, 113, 113, 0.08);
+  --bg:#0d0d0f; --bg-pane:#131316; --bg-card:#1a1a1c; --bg-input:#08080a;
+  --bg-hover:rgba(255,255,255,.05); --bg-selected:rgba(96,165,250,.12);
+  --border:rgba(255,255,255,.06); --border-hi:rgba(255,255,255,.10);
+  --text:#e4e4e7; --text-mute:#71717a; --text-dim:#52525b;
+  --blue:#60a5fa; --emerald:#34d399; --amber:#fbbf24; --red:#f87171; --violet:#a78bfa; --orange:#fb923c;
+  --diff-add-bg:rgba(52,211,153,.08); --diff-del-bg:rgba(248,113,113,.08);
+  --diff-add-word:rgba(52,211,153,.26); --diff-del-word:rgba(248,113,113,.26);
+  --syn-keyword:#a78bfa; --syn-string:#86efac; --syn-number:#fbbf24; --syn-comment:#52525b;
+  --radius-sm:4px; --radius:6px; --radius-md:8px; --radius-lg:10px;
+  --act-rest:.55;
+  --focus:rgba(96,165,250,.55);
 }
 
 * { box-sizing: border-box; }
@@ -964,3 +955,20 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
   from { opacity: 0; transform: scale(0.96); }
   to   { opacity: 1; transform: scale(1); }
 }
+
+/* Visible-at-rest action affordance (replaces opacity:0 patterns) */
+.row-actions, .branch-actions, .tag-actions, .stash-actions, .remote-actions, .hunk-actions {
+  opacity: var(--act-rest);
+  transition: opacity .12s;
+}
+.file-row:hover .row-actions, .file-row.is-selected .row-actions,
+.branch-row:hover .branch-actions, .tag-row:hover .tag-actions,
+.stash-row:hover .stash-actions, .remote-row:hover .remote-actions,
+.hunk:hover .hunk-actions { opacity: 1; }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; border-radius: var(--radius-sm); }
+.file-row:focus-visible, .branch-row:focus-visible, .log-row:focus-visible { outline-offset: -2px; }
+
+/* Search-match highlight */
+mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 2px; padding: 0 1px; }
+.file-row.is-selected mark.hl, .branch-row.is-current mark.hl { color: inherit; }
