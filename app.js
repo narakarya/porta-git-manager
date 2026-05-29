@@ -209,6 +209,7 @@
     setBadge("badge-status", changesCount > 0 ? String(changesCount) : "");
     setBadge("badge-stash", state.stashCount > 0 ? String(state.stashCount) : "");
     setBadge("badge-rebase", state.rebaseInProgress ? "!" : "", true);
+    paintQuickbar();
   }
 
   // ── Repo / HEAD probes ───────────────────────────────────────────────────
@@ -305,8 +306,23 @@
      * for `git apply` when the user clicks Stage hunk / Unstage / Discard.
      */
     async function loadDiff(file, source) {
-      if (source === "untracked") {
-        // Untracked files have no real diff. Synthesize a hunk so the
+      if (source === "untracked" || file.untracked) {
+        // Untracked directory: list the files it contains rather than
+        // trying to `head` a directory (which errors).
+        if (file.path.endsWith("/")) {
+          const dir = file.path.replace(/\/+$/, "");
+          const r = await sh("find " + quote(dir) + " -type f 2>/dev/null | head -n 500");
+          const files = (r.stdout || "").split("\n").filter(Boolean);
+          return {
+            untracked: true,
+            header: [file.path + " (untracked directory · " + files.length + " file" + (files.length === 1 ? "" : "s") + ")"],
+            hunks: files.length ? [{
+              header: "@@ -0,0 +1," + files.length + " @@",
+              lines: files.map((l) => "+" + l),
+            }] : [],
+          };
+        }
+        // Untracked file has no real diff. Synthesize a hunk so the
         // preview shows the file's first 4 KB as "all added".
         const r = await sh("head -c 4096 " + quote(file.path));
         const content = r.code === 0 ? (r.stdout || "") : "(binary or unreadable)";
@@ -533,7 +549,7 @@
           danger: true, okLabel: "Delete",
         });
         if (!ok) return;
-        const r = await sh("rm -f " + quote(filePath));
+        const r = await sh("rm -rf " + quote(filePath));
         if (r.code === 0) { ui.toast("Deleted " + filePath, "success"); await refresh(); }
         else ui.toast(r.stderr || "Delete failed", "error", 5000);
         return;
@@ -604,7 +620,7 @@
         danger: true, okLabel: "Discard",
       });
       if (!ok) return;
-      if (file.untracked) await git("clean -f -- " + quote(file.path));
+      if (file.untracked) await git("clean -fd -- " + quote(file.path));
       else {
         const r = await git("restore -- " + quote(file.path));
         if (r.code !== 0) await git("checkout -- " + quote(file.path));
@@ -731,7 +747,7 @@
       if (unstaged.length === 0) {
         list.append(h("div", { class: "empty-files" }, status.unstaged.length === 0 ? "Working tree clean" : "Nothing matches filter"));
       } else {
-        unstaged.forEach((f) => list.append(renderFileRow(f, "unstaged", diffNode, filter)));
+        unstaged.forEach((f) => list.append(renderFileRow(f, f.untracked ? "untracked" : "unstaged", diffNode, filter)));
       }
 
       const split = h("div", { class: "status-split" }, list, diffNode);
@@ -793,14 +809,25 @@
 
     async function loadBranches() {
       const sep = "\x1f";
-      const r = await git("branch -a --format=" + quote("%(HEAD)" + sep + "%(refname:short)" + sep + "%(upstream:short)" + sep + "%(upstream:track)" + sep + "%(objectname:short)"));
+      const r = await git("branch -a --format=" + quote("%(HEAD)" + sep + "%(refname:short)" + sep + "%(upstream:short)" + sep + "%(upstream:track)" + sep + "%(objectname:short)" + sep + "%(committerdate:relative)" + sep + "%(contents:subject)"));
       if (r.code !== 0) return { local: [], remote: [] };
+      // Which local branches are already merged into the current HEAD —
+      // safe to delete. `git branch --merged` lists them (current branch
+      // is prefixed with "*").
+      const mergedR = await git("branch --merged");
+      const merged = new Set(
+        mergedR.code === 0
+          ? mergedR.stdout.split("\n").map((s) => s.replace(/^[*+]?\s*/, "").trim()).filter(Boolean)
+          : []
+      );
       const all = r.stdout.split("\n").filter(Boolean).map((line) => {
-        const [head, name, upstream, track, sha] = line.split(sep);
+        const [head, name, upstream, track, sha, when, subject] = line.split(sep);
         return {
           isCurrent: head === "*",
           name, upstream: upstream || null, track: track || "", sha,
+          when: when || "", subject: subject || "",
           isRemote: name.startsWith("remotes/"),
+          merged: merged.has(name),
         };
       });
       return {
@@ -894,38 +921,71 @@
 
       const list = h("div", { class: "branches-list" });
 
+      const hl = (s) => window.GMText.highlightMatches(s, state.branchFilter.toLowerCase());
+
+      // Tracking badge: ahead/behind/gone, derived from `%(upstream:track)`.
+      function trackBadge(b) {
+        if (!b.upstream) return h("span", { class: "branch-tag is-local" }, "local-only");
+        const t = b.track || "";
+        if (/gone/.test(t)) return h("span", { class: "branch-tag is-gone" }, "upstream gone");
+        const ahead = (t.match(/ahead (\d+)/) || [])[1];
+        const behind = (t.match(/behind (\d+)/) || [])[1];
+        if (!ahead && !behind) return h("span", { class: "branch-tag is-synced" }, "up to date");
+        return h("span", { class: "branch-tag is-diverged" },
+          ahead ? "↑" + ahead : "", behind ? " ↓" + behind : "");
+      }
+
+      function mergeBadge(b) {
+        if (b.isCurrent) return null;
+        return b.merged
+          ? h("span", { class: "branch-tag is-merged" }, "merged")
+          : h("span", { class: "branch-tag is-unmerged" }, "unmerged");
+      }
+
+      function branchRow(b, opts) {
+        return h("div", { class: "branch-row" + (b.isCurrent ? " is-current" : "") },
+          h("span", { class: "branch-marker" }, b.isCurrent ? "●" : ""),
+          h("div", { class: "branch-main" },
+            h("div", { class: "branch-line" },
+              h("span", { class: "branch-name", title: b.name, html: hl(b.name) }),
+              opts.tags,
+            ),
+            h("div", { class: "branch-sub" },
+              h("span", { class: "branch-sha" }, b.sha),
+              b.when && h("span", { class: "branch-when" }, b.when),
+              b.subject && h("span", { class: "branch-subject", title: b.subject }, b.subject),
+            ),
+          ),
+          h("span", { class: "branch-actions" }, ...opts.actions),
+        );
+      }
+
       const filteredLocal = local.filter(match);
       list.append(h("div", { class: "branch-section-title" }, "Local", h("span", { class: "count" }, String(filteredLocal.length))));
       if (filteredLocal.length === 0) list.append(h("div", { class: "empty-files" }, "No matching local branches"));
       for (const b of filteredLocal) {
-        list.append(h("div", { class: "branch-row" + (b.isCurrent ? " is-current" : "") },
-          h("span", { class: "branch-marker" }, b.isCurrent ? "●" : ""),
-          h("span", { class: "branch-name", title: b.name, html: window.GMText.highlightMatches(b.name, state.branchFilter.toLowerCase()) }),
-          h("span", { class: "branch-meta" }, b.upstream ? `${b.upstream} ${b.track}` : ""),
-          h("span", { class: "branch-actions" },
-            !b.isCurrent && h("button", { class: "row-action", onClick: () => checkout(b) }, "switch"),
-            !b.isCurrent && h("button", { class: "row-action danger", onClick: () => deleteBranch(b.name) }, "delete"),
-          ),
-        ));
+        list.append(branchRow(b, {
+          tags: h("span", { class: "branch-tags" }, mergeBadge(b), trackBadge(b)),
+          actions: [
+            !b.isCurrent && h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Switch"),
+            !b.isCurrent && h("button", { class: "btn-mini danger", onClick: () => deleteBranch(b.name) }, "Delete"),
+          ].filter(Boolean),
+        }));
       }
 
       const filteredRemote = remote.filter(match);
       if (filteredRemote.length > 0) {
         list.append(h("div", { class: "branch-section-title" }, "Remote", h("span", { class: "count" }, String(filteredRemote.length))));
         for (const b of filteredRemote) {
-          list.append(h("div", { class: "branch-row" },
-            h("span", { class: "branch-marker" }, ""),
-            h("span", { class: "branch-name", title: b.name, html: window.GMText.highlightMatches(b.name, state.branchFilter.toLowerCase()) }),
-            h("span", { class: "branch-meta" }, b.sha),
-            h("span", { class: "branch-actions" },
-              h("button", { class: "row-action", onClick: () => checkout(b) }, "check out"),
-            ),
-          ));
+          list.append(branchRow(b, {
+            tags: null,
+            actions: [h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Check out")],
+          }));
         }
       }
 
       if (filteredLocal.length === 0 && filteredRemote.length === 0 && state.branchFilter) {
-        list.append(h("div", { class: "empty-files" }, "Tidak ada branch yang cocok dengan “" + state.branchFilter + "”."));
+        list.append(h("div", { class: "empty-files" }, "No branches match “" + state.branchFilter + "”."));
       }
 
       node.append(list);
@@ -1085,9 +1145,9 @@
             h("span", { class: "remote-name" }, r.name),
             h("span", { class: "remote-url", title: r.fetchUrl }, r.fetchUrl),
             h("span", { class: "remote-actions" },
-              h("button", { class: "row-action",        onClick: () => setRemoteUrl(r.name, r.fetchUrl) }, "edit URL"),
-              h("button", { class: "row-action",        onClick: () => renameRemote(r.name)             }, "rename"),
-              h("button", { class: "row-action danger", onClick: () => removeRemote(r.name)             }, "remove"),
+              h("button", { class: "btn-mini",        onClick: () => setRemoteUrl(r.name, r.fetchUrl) }, "Edit URL"),
+              h("button", { class: "btn-mini",        onClick: () => renameRemote(r.name)             }, "Rename"),
+              h("button", { class: "btn-mini danger", onClick: () => removeRemote(r.name)             }, "Remove"),
             ),
           ));
         }
@@ -1314,25 +1374,32 @@
       }
 
       const targetInput = h("input", {
-        class: "input", style: { maxWidth: "280px" },
-        placeholder: "Target ref (e.g. HEAD~5, main, abc123)",
+        class: "input",
+        placeholder: "HEAD~5, main, abc123…",
         value: state.rebaseTarget,
         onInput: (e) => { state.rebaseTarget = e.target.value; },
         onKeydown: (e) => { if (e.key === "Enter") buildPlan(); },
       });
-      node.append(h("div", { class: "rebase-form" }, targetInput, h("button", { class: "btn-primary", onClick: buildPlan }, "Plan rebase")));
+      node.append(h("div", { class: "rebase-form" },
+        h("label", { class: "rebase-form-label" }, "Rebase onto"),
+        targetInput,
+        h("button", { class: "btn-primary", onClick: buildPlan }, "Plan rebase"),
+      ));
 
       if (state.rebasePlan.length === 0) {
-        node.append(h("p", { class: "empty-sub", style: { padding: "12px" } },
-          "Pick a target ref. Commits between it and HEAD will appear here for you to pick / squash / fixup / drop and (optionally) reorder.",
+        node.append(h("div", { class: "rebase-empty" },
+          h("div", { class: "rebase-empty-title" }, "Interactive rebase"),
+          h("p", { class: "empty-sub", style: { margin: "0 auto" } },
+            "Enter a target ref above and press Plan rebase. Commits between it and HEAD appear here, where you can pick · squash · fixup · drop and reorder them before applying."),
         ));
         return;
       }
 
+      const plan = h("div", { class: "rebase-plan" });
       for (let i = 0; i < state.rebasePlan.length; i++) {
         const c = state.rebasePlan[i];
         const sel = h("select", {
-          class: "input",
+          class: "input rebase-op",
           onChange: (e) => { c.op = e.target.value; render(); },
         });
         for (const op of ["pick", "squash", "fixup", "drop"]) {
@@ -1342,16 +1409,19 @@
           h("button", { class: "row-action", onClick: () => move(i, -1), disabled: i === 0 }, "↑"),
           h("button", { class: "row-action", onClick: () => move(i, +1), disabled: i === state.rebasePlan.length - 1 }, "↓"),
         );
-        node.append(h("div", { class: "rebase-todo-row" + (c.op === "drop" ? " is-drop" : ""), dataset: { op: c.op } },
+        plan.append(h("div", { class: "rebase-todo-row" + (c.op === "drop" ? " is-drop" : ""), dataset: { op: c.op } },
           grip,
           sel,
           h("span", { class: "log-sha" }, c.sha),
           h("span", { class: "log-msg-line", title: c.msg }, c.msg),
         ));
       }
+      node.append(plan);
 
       node.append(h("div", { class: "rebase-actions" },
         h("button", { class: "btn-primary", onClick: startRebase }, "Start rebase"),
+        h("span", { class: "rebase-count" }, state.rebasePlan.filter((c) => c.op !== "drop").length + " of " + state.rebasePlan.length + " commits kept"),
+        h("div", { style: { flex: "1" } }),
         h("button", { class: "btn-ghost", onClick: () => { state.rebasePlan = []; render(); } }, "Clear"),
       ));
     }
@@ -1367,11 +1437,18 @@
 
     async function loadStash() {
       const sep = "\x1f";
-      const r = await git("stash list --pretty=format:" + quote("%gd" + sep + "%s"));
+      const r = await git("stash list --pretty=format:" + quote("%gd" + sep + "%s" + sep + "%cr"));
       if (r.code !== 0) return [];
       return r.stdout.split("\n").filter(Boolean).map((line) => {
-        const [ref, m] = line.split(sep);
-        return { ref, msg: m };
+        const [ref, m, when] = line.split(sep);
+        // "WIP on main: 9f39576 Subject" / "On main: custom message" →
+        // pull out the branch and a clean description.
+        const parsed = /^(?:WIP on|On) ([^:]+):\s*(.*)$/.exec(m || "");
+        const branch = parsed ? parsed[1] : null;
+        let desc = parsed ? parsed[2] : (m || "");
+        // Auto WIP entries prefix the HEAD sha — drop it for readability.
+        desc = desc.replace(/^[0-9a-f]{7,40}\s+/, "");
+        return { ref, msg: m, branch, desc: desc || m, when: when || "" };
       });
     }
 
@@ -1437,11 +1514,19 @@
         for (const s of stashes) {
           list.append(h("div", { class: "stash-row" },
             h("span", { class: "stash-idx" }, s.ref),
-            h("span", { class: "stash-msg", title: s.msg }, s.msg),
+            h("div", { class: "stash-main" },
+              h("div", { class: "stash-line" },
+                h("span", { class: "stash-msg", title: s.msg }, s.desc),
+              ),
+              h("div", { class: "stash-sub" },
+                s.branch && h("span", { class: "stash-branch" }, s.branch),
+                s.when && h("span", { class: "stash-when" }, s.when),
+              ),
+            ),
             h("span", { class: "stash-actions" },
-              h("button", { class: "row-action", onClick: () => apply(s.ref) }, "apply"),
-              h("button", { class: "row-action", onClick: () => pop(s.ref) }, "pop"),
-              h("button", { class: "row-action danger", onClick: () => drop(s.ref) }, "drop"),
+              h("button", { class: "btn-mini", onClick: () => apply(s.ref) }, "Apply"),
+              h("button", { class: "btn-mini", onClick: () => pop(s.ref) }, "Pop"),
+              h("button", { class: "btn-mini danger", onClick: () => drop(s.ref) }, "Drop"),
             ),
           ));
         }
@@ -1611,6 +1696,46 @@
     panes.appendChild(wrap);
   }
 
+  // ── Top-bar quick Pull / Push ────────────────────────────────────────────
+  // Shared runner so the Sync tab and the top bar behave identically:
+  // toast → run → toast → refresh. Buttons are disabled while running and
+  // when there's nothing actionable (e.g. push with no upstream + no branch).
+  let quickRunning = false;
+  function paintQuickbar() {
+    const pull = $("#quick-pull");
+    const push = $("#quick-push");
+    if (!pull || !push) return;
+    const ab = state.aheadBehind;
+    pull.disabled = quickRunning || !state.repoOk;
+    push.disabled = quickRunning || !state.repoOk || !state.branch;
+    pull.classList.toggle("has-work", !!(ab && ab.behind));
+    push.classList.toggle("has-work", !!(ab && ab.ahead) || !state.upstream);
+    const pl = pull.querySelector(".quick-label");
+    const ph = push.querySelector(".quick-label");
+    if (pl) pl.textContent = ab && ab.behind ? "Pull ↓" + ab.behind : "Pull";
+    if (ph) ph.textContent = ab && ab.ahead ? "Push ↑" + ab.ahead : "Push";
+  }
+
+  async function runQuick(label, cmd, okMsg) {
+    if (quickRunning) return;
+    quickRunning = true;
+    paintQuickbar();
+    ui.toast("Running " + label + "…", "info", 1000);
+    const r = await sh(cmd, { timeout: 120000 });
+    quickRunning = false;
+    if (r.code === 0) ui.toast(okMsg || label + " complete", "success");
+    else ui.toast(r.stderr || label + " failed", "error", 5000);
+    await refresh();
+  }
+
+  function quickPull() {
+    runQuick("pull", "git pull --no-edit");
+  }
+  function quickPush() {
+    const upstreamArgs = state.upstream ? "" : " -u origin " + quote(state.branch);
+    runQuick("push", "git push" + upstreamArgs);
+  }
+
   // ── Refresh: probes + re-render active tab ───────────────────────────────
   async function refresh() {
     const btn = $("#refresh-btn");
@@ -1650,6 +1775,8 @@
   async function init() {
     bridge.ui.setTitle("Git — " + bridge.app.name);
     $("#refresh-btn").addEventListener("click", refresh);
+    $("#quick-pull").addEventListener("click", quickPull);
+    $("#quick-push").addEventListener("click", quickPush);
     document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => activateTab(t.dataset.tab)));
     bindKeys();
 
