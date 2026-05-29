@@ -7,13 +7,40 @@ pure HTML + JS + CSS that talks to Porta via `window.portaBridge`.
 
 | Tab | What |
 |-----|------|
-| **Status** | Split view with diff preview, **per-hunk Stage / Unstage / Discard** (hover the hunk header), file-level stage / unstage / discard, commit + amend (⌘↵), **Unified ↔ Split diff toggle** *(new in 0.4.0)*. |
-| **Branches** | Local + remote, filter input, current marker, ahead/behind tracking, create + switch + (force-)delete. |
-| **Sync** | Card grid: Fetch, Fetch + prune, Pull, Pull --rebase, Push, Push --force-with-lease. Per-card running state. **Remote management** *(new in 0.4.0)*: list / add / rename / edit-URL / remove. |
+| **Status** | Split view with diff preview, **per-hunk Stage / Unstage / Discard** (hover the hunk header), file-level stage / unstage / discard, commit + amend (⌘↵), **Unified ↔ Split diff toggle** *(new in 0.4.0)*. Untracked files **and directories** now preview their contents instead of showing "(no diff)" *(fixed in 0.6.0)*. |
+| **Branches** | Local + remote, filter input, current marker, ahead/behind tracking, create + switch + (force-)delete. **Merged / unmerged badges**, tracking badges, and last-commit info per row *(new in 0.6.0)*. |
+| **Sync** | Card grid: Fetch, Fetch + prune, Pull, Pull --rebase, Push, Push --force-with-lease. Per-card running state. **Remote management** *(new in 0.4.0)*: list / add / rename / edit-URL / remove. **Top-bar quick Pull / Push** *(new in 0.6.0)*. |
 | **History** | Split view: last 100 commits with message search; click to see header + colored diff. |
 | **Rebase** | Pick a target ref, choose pick/squash/fixup/drop per commit, reorder with ↑↓, abort/continue when paused. |
-| **Stash** | List, save (with message + include-untracked toggle), apply, pop, drop. |
+| **Stash** | List, save (with message + include-untracked toggle), apply, pop, drop. Rows show the **branch chip + relative time**, parsed from the stash message *(new in 0.6.0)*. |
 | **Tags** *(new in 0.3.0)* | Create lightweight or annotated tags, push to origin, delete locally, delete on origin. Filter input for finding among many. |
+
+## UI/UX overhaul + fixes (0.6.0)
+
+- **Untracked diff fix** — untracked files used to show "(no diff)" because the
+  list passed them through as `unstaged`, so `git diff` (which ignores untracked
+  paths) returned nothing. They now route through the `untracked` path and
+  preview their first 4 KB as an all-added hunk. **Untracked directories** list
+  their contained files instead of erroring on `head`. Discard handles
+  directories too (`rm -rf` / `git clean -fd`).
+- **Branches** — larger rows with per-row last-commit info (sha · relative time ·
+  subject). New **status badges**: `merged` / `unmerged` (via `git branch
+  --merged`) so you can see at a glance which branches are safe to delete, plus
+  tracking badges (`up to date` / `↑n ↓n` / `upstream gone` / `local-only`).
+  Switch / Delete / Check out became visible pill buttons.
+- **Stash** — the `WIP on <branch>: <sha> <subject>` message is parsed into a
+  branch chip + relative time, the leading sha is dropped from the description,
+  and the cramped `stash@{n}` column got proper spacing. Apply / Pop / Drop are
+  pill buttons.
+- **Rebase** — the target input is now a labelled card, the empty state is an
+  informative panel, todo rows carry per-op colour accents (pick=green,
+  squash/fixup=amber, drop=red) plus a "X of Y commits kept" counter.
+- **Top bar** — quick **Pull** / **Push** buttons next to the branch chip, with
+  live ahead/behind counts (`Pull ↓2`, `Push ↑3`) and a highlight when there's
+  work to do. They share the Sync tab's runner (toast → run → toast → refresh)
+  and disable while running.
+- **Sync** — remote actions (Edit URL / Rename / Remove) use the same pill style
+  for consistency.
 
 ## UI/UX overhaul (0.5.0)
 
