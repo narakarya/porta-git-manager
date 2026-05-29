@@ -223,7 +223,7 @@
   }
 
   function renderActiveTab() {
-    const map = { status: statusTab, branches: branchesTab, sync: syncTab, history: historyTab, rebase: rebaseTab, stash: stashTab };
+    const map = { status: statusTab, branches: branchesTab, sync: syncTab, history: historyTab, rebase: rebaseTab, stash: stashTab, tags: tagsTab };
     const tab = map[state.currentTab];
     if (tab) tab.render();
   }
@@ -256,36 +256,163 @@
       return parsePorcelain(r.stdout);
     }
 
+    /**
+     * Run git diff for the selected file and return a structured form:
+     *   { header: [str], hunks: [{ header, lines }], untracked: bool }
+     * Hunks let us render a per-hunk action bar and build a minimal patch
+     * for `git apply` when the user clicks Stage hunk / Unstage / Discard.
+     */
     async function loadDiff(file, source) {
       if (source === "untracked") {
+        // Untracked files have no real diff. Synthesize a hunk so the
+        // preview shows the file's first 4 KB as "all added".
         const r = await sh("head -c 4096 " + quote(file.path));
-        if (r.code !== 0) return [{ kind: "meta", text: "(binary or unreadable)" }];
-        const lines = (r.stdout || "").split("\n");
-        return [
-          { kind: "file", text: file.path + " (untracked)" },
-          ...lines.map((l) => ({ kind: "add", text: "+" + l })),
-        ];
+        const content = r.code === 0 ? (r.stdout || "") : "(binary or unreadable)";
+        const lines = content.split("\n");
+        return {
+          untracked: true,
+          header: [file.path + " (untracked)"],
+          hunks: [{
+            header: "@@ -0,0 +1," + lines.length + " @@",
+            lines: lines.map((l) => "+" + l),
+          }],
+        };
       }
       const flag = source === "staged" ? "--cached" : "";
       const r = await git("diff --no-color " + flag + " -- " + quote(file.path));
-      if (r.code !== 0) return [{ kind: "meta", text: r.stderr || "(no diff)" }];
-      if (!r.stdout.trim()) return [{ kind: "meta", text: "(no diff)" }];
-      return r.stdout.split("\n").map(classifyDiffLine);
+      if (r.code !== 0) return { header: [r.stderr || "(no diff)"], hunks: [] };
+      if (!r.stdout.trim()) return { header: ["(no diff)"], hunks: [] };
+      return parseDiff(r.stdout);
+    }
+
+    function parseDiff(text) {
+      const header = [];
+      const hunks = [];
+      let current = null;
+      for (const line of text.split("\n")) {
+        if (line.startsWith("@@")) {
+          if (current) hunks.push(current);
+          current = { header: line, lines: [] };
+        } else if (current) {
+          current.lines.push(line);
+        } else {
+          header.push(line);
+        }
+      }
+      if (current) hunks.push(current);
+      // Trim the trailing empty line that `git diff` always emits.
+      if (hunks.length > 0) {
+        const last = hunks[hunks.length - 1];
+        while (last.lines.length > 0 && last.lines[last.lines.length - 1] === "") last.lines.pop();
+      }
+      return { header, hunks };
+    }
+
+    function buildHunkPatch(filePath, hunk) {
+      return ["--- a/" + filePath, "+++ b/" + filePath, hunk.header, ...hunk.lines].join("\n") + "\n";
+    }
+
+    /**
+     * Write `patch` to a temp file and `git apply` it with the requested
+     * flags. `--whitespace=nowarn` matches the UI's diff rendering — we
+     * don't bubble whitespace warnings up as errors.
+     */
+    async function applyHunk(patch, opts) {
+      const tmp = "/tmp/porta-hunk-" + Date.now() + "-" + Math.floor(Math.random() * 1e6) + ".patch";
+      const write = await sh("cat > " + quote(tmp) + " <<'PORTA_PATCH_EOF'\n" + patch + "PORTA_PATCH_EOF");
+      if (write.code !== 0) return { code: write.code, stderr: "Could not write patch file" };
+      const args = ["apply"];
+      if (opts.cached)  args.push("--cached");
+      if (opts.reverse) args.push("--reverse");
+      args.push("--whitespace=nowarn");
+      args.push(quote(tmp));
+      const r = await git(args.join(" "));
+      await sh("rm -f " + quote(tmp));
+      return r;
     }
 
     function classifyDiffLine(line) {
-      if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff ")) return { kind: "file", text: line };
-      if (line.startsWith("@@")) return { kind: "hunk", text: line };
-      if (line.startsWith("+")) return { kind: "add", text: line };
-      if (line.startsWith("-")) return { kind: "del", text: line };
-      return { kind: "meta", text: line };
+      if (line.startsWith("+")) return "add";
+      if (line.startsWith("-")) return "del";
+      if (line.startsWith("\\")) return "meta"; // "\ No newline at end of file"
+      return null; // context
     }
 
-    function renderDiffInto(node, lines) {
+    /**
+     * Render the parsed diff into `node`. Each hunk is its own .hunk
+     * container with a header bar holding the @@ line plus per-hunk
+     * action buttons (Stage/Unstage/Discard, depending on `source`).
+     */
+    function renderDiffInto(node, parsed, source, filePath) {
       node.innerHTML = "";
-      for (const l of lines) {
-        node.appendChild(h("span", { class: "diff-line diff-" + l.kind }, l.text || " "));
+      for (const m of parsed.header) {
+        const cls = (m.startsWith("diff ") || m.startsWith("+++") || m.startsWith("---")) ? "diff-file" : "diff-meta";
+        node.appendChild(h("span", { class: "diff-line " + cls }, m || " "));
       }
+      for (const hunk of parsed.hunks) {
+        const wrapper = h("div", { class: "hunk" });
+        const actions = h("span", { class: "hunk-actions" });
+        if (source === "unstaged" || source === "untracked") {
+          actions.append(
+            h("button", { class: "hunk-action",        onClick: () => stageOneHunk(filePath, hunk, source) }, "Stage hunk"),
+            h("button", { class: "hunk-action danger", onClick: () => discardOneHunk(filePath, hunk, source) }, "Discard"),
+          );
+        } else if (source === "staged") {
+          actions.append(
+            h("button", { class: "hunk-action", onClick: () => unstageOneHunk(filePath, hunk) }, "Unstage hunk"),
+          );
+        }
+        wrapper.appendChild(h("div", { class: "hunk-header" }, hunk.header, actions));
+        for (const line of hunk.lines) {
+          const kind = classifyDiffLine(line);
+          const cls = "diff-line" + (kind ? " diff-" + kind : "");
+          wrapper.appendChild(h("span", { class: cls }, line || " "));
+        }
+        node.appendChild(wrapper);
+      }
+    }
+
+    // ── Per-hunk actions ───────────────────────────────────────────────────
+
+    async function stageOneHunk(filePath, hunk, source) {
+      if (source === "untracked") {
+        // Untracked files have no real hunk in the index — synthesized
+        // one is for preview only. Stage the whole file instead.
+        return stage(filePath);
+      }
+      const r = await applyHunk(buildHunkPatch(filePath, hunk), { cached: true });
+      if (r.code === 0) { ui.toast("Staged hunk", "success"); await refresh(); }
+      else ui.toast(r.stderr || "Stage hunk failed", "error", 5000);
+    }
+
+    async function unstageOneHunk(filePath, hunk) {
+      const r = await applyHunk(buildHunkPatch(filePath, hunk), { cached: true, reverse: true });
+      if (r.code === 0) { ui.toast("Unstaged hunk", "success"); await refresh(); }
+      else ui.toast(r.stderr || "Unstage hunk failed", "error", 5000);
+    }
+
+    async function discardOneHunk(filePath, hunk, source) {
+      if (source === "untracked") {
+        const ok = await ui.confirm({
+          title: "Delete untracked file?",
+          body: `Remove ${filePath} from disk. There's no undo.`,
+          danger: true, okLabel: "Delete",
+        });
+        if (!ok) return;
+        const r = await sh("rm -f " + quote(filePath));
+        if (r.code === 0) { ui.toast("Deleted " + filePath, "success"); await refresh(); }
+        else ui.toast(r.stderr || "Delete failed", "error", 5000);
+        return;
+      }
+      const ok = await ui.confirm({
+        title: "Discard hunk?",
+        body: "Revert this hunk in the working tree. There's no undo.",
+        danger: true, okLabel: "Discard",
+      });
+      if (!ok) return;
+      const r = await applyHunk(buildHunkPatch(filePath, hunk), { reverse: true });
+      if (r.code === 0) { ui.toast("Discarded hunk", "success"); await refresh(); }
+      else ui.toast(r.stderr || "Discard hunk failed", "error", 5000);
     }
 
     async function selectFile(file, source, diffNode) {
@@ -300,10 +427,10 @@
         return;
       }
       diffNode.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
-      const lines = await loadDiff(file, source);
+      const parsed = await loadDiff(file, source);
       // If user clicked something else while we were loading, drop this result.
       if (lastDiffPath !== file.path || lastDiffSource !== source) return;
-      renderDiffInto(diffNode, lines);
+      renderDiffInto(diffNode, parsed, source, file.path);
     }
 
     // ── Actions ───────────────────────────────────────────────────────────
@@ -1053,6 +1180,140 @@
     return { render };
   })();
 
+  // ── Tags tab ─────────────────────────────────────────────────────────────
+  const tagsTab = (() => {
+    const pane = () => document.querySelector('.pane[data-pane="tags"]');
+    let newName = "";
+    let newMsg = "";
+    let annotated = true;
+    let filter = "";
+
+    async function loadTags() {
+      const sep = "\x1f";
+      // refname:short is the bare tag name; objectname:short is the SHA the
+      // tag points at (commit SHA for lightweight, tag object SHA for
+      // annotated — close enough for display); contents:subject is the
+      // first message line for annotated tags (empty for lightweight).
+      const r = await git("tag -l --format=" + quote("%(refname:short)" + sep + "%(objectname:short)" + sep + "%(contents:subject)"));
+      if (r.code !== 0) return [];
+      return r.stdout.split("\n").filter(Boolean).map((line) => {
+        const [name, sha, msg] = line.split(sep);
+        return { name, sha, msg: msg || "" };
+      });
+    }
+
+    async function create() {
+      const name = newName.trim();
+      if (!name) return;
+      const args = annotated
+        ? "tag -a " + quote(name) + " -m " + quote(newMsg.trim() || name)
+        : "tag " + quote(name);
+      const r = await git(args);
+      if (r.code === 0) {
+        ui.toast("Created tag " + name, "success");
+        newName = "";
+        newMsg = "";
+        await render();
+      } else ui.toast(r.stderr || "Create tag failed", "error", 5000);
+    }
+
+    async function push(name) {
+      const r = await sh("git push origin " + quote(name), { timeout: 60000 });
+      if (r.code === 0) ui.toast("Pushed " + name, "success");
+      else ui.toast(r.stderr || "Push tag failed", "error", 5000);
+    }
+
+    async function del(name) {
+      const ok = await ui.confirm({
+        title: "Delete tag locally?",
+        body: `Delete the local tag "${name}". The remote tag (if any) won't be touched — use Delete remote for that.`,
+        danger: true, okLabel: "Delete",
+      });
+      if (!ok) return;
+      const r = await git("tag -d " + quote(name));
+      if (r.code === 0) ui.toast("Deleted " + name, "success");
+      else ui.toast(r.stderr || "Delete failed", "error", 5000);
+      await render();
+    }
+
+    async function delRemote(name) {
+      const ok = await ui.confirm({
+        title: "Delete remote tag?",
+        body: `Run \`git push --delete origin ${name}\`. This unpublishes the tag on origin — collaborators may still have it locally.`,
+        danger: true, okLabel: "Delete remote",
+      });
+      if (!ok) return;
+      const r = await sh("git push --delete origin " + quote(name), { timeout: 60000 });
+      if (r.code === 0) ui.toast("Removed " + name + " from origin", "success");
+      else ui.toast(r.stderr || "Remote delete failed", "error", 5000);
+    }
+
+    async function render() {
+      const node = pane();
+      node.innerHTML = "";
+      node.className = "pane is-active tags-pane";
+
+      const nameInput = h("input", {
+        class: "input", style: { maxWidth: "180px" },
+        placeholder: "Tag name (e.g. v1.0.0)",
+        value: newName,
+        onInput: (e) => { newName = e.target.value; },
+        onKeydown: (e) => { if (e.key === "Enter") create(); },
+      });
+      const msgInput = h("input", {
+        class: "input", style: { maxWidth: "240px" },
+        placeholder: "Message (annotated tags)",
+        value: newMsg,
+        onInput: (e) => { newMsg = e.target.value; },
+        onKeydown: (e) => { if (e.key === "Enter") create(); },
+      });
+      const annChk = h("input", {
+        type: "checkbox", checked: annotated,
+        onChange: (e) => { annotated = e.target.checked; render(); },
+      });
+      const filterInput = h("input", {
+        class: "history-search", style: { maxWidth: "180px" },
+        placeholder: "Filter…",
+        value: filter,
+        onInput: (e) => { filter = e.target.value; render(); },
+      });
+
+      node.append(h("div", { class: "tags-top" },
+        nameInput,
+        msgInput,
+        h("label", { class: "commit-options", style: { whiteSpace: "nowrap" } }, annChk, "annotated"),
+        h("button", { class: "btn-primary", onClick: create, disabled: !newName.trim() }, "Create"),
+        h("div", { style: { flex: "1" } }),
+        filterInput,
+      ));
+
+      const tags = await loadTags();
+      const f = filter.toLowerCase();
+      const visible = f ? tags.filter((t) => t.name.toLowerCase().includes(f)) : tags;
+
+      const list = h("div", { class: "tags-list" });
+      if (visible.length === 0) {
+        list.append(h("div", { class: "empty-files" }, tags.length === 0 ? "No tags" : "No tags match"));
+      } else {
+        for (const t of visible) {
+          list.append(h("div", { class: "tag-row" },
+            h("span", { class: "tag-name", title: t.name }, t.name),
+            h("span", { class: "tag-sha" }, t.sha),
+            h("span", { class: "tag-msg", title: t.msg }, t.msg),
+            h("span", { class: "tag-actions" },
+              h("button", { class: "row-action",        onClick: () => push(t.name)      }, "push"),
+              h("button", { class: "row-action danger", onClick: () => delRemote(t.name) }, "remote ×"),
+              h("button", { class: "row-action danger", onClick: () => del(t.name)       }, "delete"),
+            ),
+          ));
+        }
+      }
+      node.append(list);
+    }
+
+    return { render };
+  })();
+
   // ── No-repo bootstrap ────────────────────────────────────────────────────
   async function renderNoRepo() {
     const panes = $(".panes");
@@ -1102,8 +1363,8 @@
       // Don't fight Cmd/Ctrl + key — those are reserved for browser/host.
       if (e.metaKey || e.ctrlKey) return;
       const k = e.key.toLowerCase();
-      if (["1", "2", "3", "4", "5", "6"].includes(k)) {
-        const tab = ["status", "branches", "sync", "history", "rebase", "stash"][parseInt(k, 10) - 1];
+      if (["1", "2", "3", "4", "5", "6", "7"].includes(k)) {
+        const tab = ["status", "branches", "sync", "history", "rebase", "stash", "tags"][parseInt(k, 10) - 1];
         e.preventDefault();
         activateTab(tab);
       } else if (k === "r") {

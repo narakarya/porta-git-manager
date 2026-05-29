@@ -7,21 +7,34 @@ pure HTML + JS + CSS that talks to Porta via `window.portaBridge`.
 
 | Tab | What |
 |-----|------|
-| **Status** | Split view: file list on the left, diff preview on the right. Filter input, stage / unstage / discard per file, commit (or amend) with `⌘↵`. |
+| **Status** | Split view with diff preview, **per-hunk Stage / Unstage / Discard** buttons (hover the hunk header), file-level stage / unstage / discard, commit + amend (⌘↵). |
 | **Branches** | Local + remote, filter input, current marker, ahead/behind tracking, create + switch + (force-)delete. |
 | **Sync** | Card grid: Fetch, Fetch + prune, Pull, Pull --rebase, Push, Push --force-with-lease. Per-card running state. |
 | **History** | Split view: last 100 commits with message search; click to see header + colored diff. |
 | **Rebase** | Pick a target ref, choose pick/squash/fixup/drop per commit, reorder with ↑↓, abort/continue when paused. |
 | **Stash** | List, save (with message + include-untracked toggle), apply, pop, drop. |
+| **Tags** *(new in 0.3.0)* | Create lightweight or annotated tags, push to origin, delete locally, delete on origin. Filter input for finding among many. |
 
 ## UX shortcuts
 
-- `1`–`6` switch tabs.
+- `1`–`7` switch tabs (Status / Branches / Sync / History / Rebase / Stash / Tags).
 - `R` refreshes the active tab (branch, status, rebase state, stash count).
 - `⌘↵` (or `Ctrl↵`) inside the commit textarea commits.
 - Toasts replace native dialogs for routine feedback; an in-app modal handles
   destructive confirmations so you stay inside the panel.
 - Every git action auto-refreshes the relevant tab — no manual reload.
+
+## Per-hunk staging (0.3.0)
+
+In the Status tab's diff preview, hover any hunk's `@@` header to reveal
+**Stage hunk** / **Discard** (or **Unstage hunk** if the diff is from the
+index). Under the hood the extension writes a minimal patch and runs
+`git apply --cached` / `--reverse` for each click — same semantics as
+`git add -p`.
+
+Untracked files render their first 4 KB as a single all-added hunk;
+"Stage" stages the whole file, "Discard" deletes it from disk (with
+confirm modal).
 
 ## Install (locally bundled)
 
