@@ -460,42 +460,47 @@
      * not the same length as the following run of additions, the longer
      * side spills to extra rows with the shorter side blank.
      */
-    function renderSplitHunkBody(wrapper, hunk) {
+    function renderSplitHunkBody(wrapper, hunk, lang) {
+      const range = window.GMDiff.parseHunkHeader(hunk.header);
       const grid = h("div", { class: "diff-split" });
-      // Buffers for the current run of removals/additions. They get
-      // flushed (as paired rows) whenever we hit a context line or EOH.
-      let dels = [];
-      let adds = [];
+      let oldNo = range.oldStart, newNo = range.newStart;
+      let dels = [], adds = [];
+
+      function cell(side, kind, no, body, wd) {
+        const code = h("span", { class: "diff-code",
+          html: body == null ? " " : diffCodeHtml(body || " ", lang, wd || null) });
+        return h("span", { class: "diff-cell diff-cell-" + side + " " + (body == null ? "diff-blank" : "diff-" + kind) },
+          h("span", { class: "diff-gutter" }, no == null ? "" : String(no)), code);
+      }
 
       function flush() {
         const n = Math.max(dels.length, adds.length);
         for (let i = 0; i < n; i++) {
-          const left  = i < dels.length ? dels[i] : null;
+          const left = i < dels.length ? dels[i] : null;
           const right = i < adds.length ? adds[i] : null;
+          let lwd = null, rwd = null;
+          if (left && right) { const d = window.GMDiff.wordDiff(left.text, right.text); lwd = d.del; lwd.cls = "wd-del"; rwd = d.add; rwd.cls = "wd-add"; }
           grid.append(
-            h("span", {
-              class: "diff-cell diff-cell-left" + (left ? " diff-del" : " diff-blank"),
-            }, left == null ? " " : left.slice(1) || " "),
-            h("span", {
-              class: "diff-cell diff-cell-right" + (right ? " diff-add" : " diff-blank"),
-            }, right == null ? " " : right.slice(1) || " "),
+            cell("left", "del", left ? left.no : null, left ? left.text.slice(1) : null, lwd),
+            cell("right", "add", right ? right.no : null, right ? right.text.slice(1) : null, rwd),
           );
         }
-        dels = [];
-        adds = [];
+        dels = []; adds = [];
       }
 
       for (const line of hunk.lines) {
-        if (line.startsWith("-")) { dels.push(line); continue; }
-        if (line.startsWith("+")) { adds.push(line); continue; }
-        // Anything else (context, "\ No newline…") closes the pending run.
-        flush();
-        const body = line.startsWith(" ") || line.startsWith("\\") ? line.slice(1) : line;
-        const cls = line.startsWith("\\") ? " diff-meta" : "";
-        grid.append(
-          h("span", { class: "diff-cell diff-cell-left"  + cls }, body || " "),
-          h("span", { class: "diff-cell diff-cell-right" + cls }, body || " "),
-        );
+        const c = line[0];
+        if (c === "-") { dels.push({ text: line, no: oldNo++ }); }
+        else if (c === "+") { adds.push({ text: line, no: newNo++ }); }
+        else if (c === "\\") { /* no-newline marker: ignore in split */ }
+        else {
+          flush();
+          grid.append(
+            cell("left", "ctx", oldNo, line.slice(1), null),
+            cell("right", "ctx", newNo, line.slice(1), null),
+          );
+          oldNo++; newNo++;
+        }
       }
       flush();
       wrapper.appendChild(grid);

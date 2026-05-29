@@ -465,24 +465,16 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 .view-toggle-btn.is-active { background: rgba(96, 165, 250, 0.12); color: var(--blue); }
 
 /* ─── Split diff grid ──────────────────────────────────────────────────── */
-.diff-split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-.diff-cell {
-  display: block;
-  white-space: pre;
-  padding: 0 10px;
-  min-height: 18px;
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 11px;
-  border-right: 1px solid var(--border);
-}
-.diff-cell.diff-cell-right { border-right: 0; }
-.diff-cell.diff-del { background: var(--diff-del-bg); color: var(--red); }
-.diff-cell.diff-add { background: var(--diff-add-bg); color: var(--emerald); }
-.diff-cell.diff-blank { background: rgba(255, 255, 255, 0.02); }
-.diff-cell.diff-meta { color: var(--text-dim); }
+.diff-split { display:grid; grid-template-columns:1fr 1fr; }
+.diff-cell { display:grid; grid-template-columns:30px 1fr; white-space:pre; min-height:18px;
+  font-family:ui-monospace,Menlo,monospace; font-size:11px; border-right:1px solid var(--border); }
+.diff-cell .diff-gutter { color:var(--text-dim); text-align:right; padding-right:6px; user-select:none; font-variant-numeric:tabular-nums; }
+.diff-cell .diff-code { padding:0 8px; }
+.diff-cell.diff-cell-right { border-right:0; }
+.diff-cell.diff-del .diff-code { color:var(--red); } .diff-cell.diff-del { background:var(--diff-del-bg); }
+.diff-cell.diff-add .diff-code { color:var(--emerald); } .diff-cell.diff-add { background:var(--diff-add-bg); }
+.diff-cell.diff-blank { background:rgba(255,255,255,.02); }
+.diff-cell.diff-meta { color:var(--text-dim); }
 
 /* ─── Tags pane ──────────────────────────────────────────────────────────── */
 .pane.is-active.tags-pane { display: flex; flex-direction: column; height: 100%; }
