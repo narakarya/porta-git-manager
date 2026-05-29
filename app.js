@@ -630,15 +630,16 @@
     }
 
     // ── Render ────────────────────────────────────────────────────────────
-    function fileLabel(file) {
+    function fileLabel(file, filter) {
       const { dir, name } = splitPath(file.path);
+      const hl = window.GMText.highlightMatches;
       return h("span", { class: "file-path", title: file.path },
-        dir && h("span", { class: "file-dir" }, dir),
-        h("span", { class: "file-name" }, name),
+        dir && h("span", { class: "file-dir", html: hl(dir, filter || "") }),
+        h("span", { class: "file-name", html: hl(name, filter || "") }),
       );
     }
 
-    function renderFileRow(file, source, diffNode) {
+    function renderFileRow(file, source, diffNode, filter) {
       const key = `${source}:${file.path}`;
       const isStaged = source === "staged";
       const row = h("div", {
@@ -647,7 +648,7 @@
         onClick: () => selectFile(file, source, diffNode),
       },
         h("span", { class: "file-status" }, file.code),
-        fileLabel(file),
+        fileLabel(file, filter),
         h("span", { class: "row-actions" },
           isStaged
             ? h("button", { class: "row-action", onClick: (e) => { e.stopPropagation(); unstage(file.path); } }, "unstage")
@@ -718,7 +719,7 @@
       if (staged.length === 0) {
         list.append(h("div", { class: "empty-files" }, "Nothing staged"));
       } else {
-        staged.forEach((f) => list.append(renderFileRow(f, "staged", diffNode)));
+        staged.forEach((f) => list.append(renderFileRow(f, "staged", diffNode, filter)));
       }
 
       list.append(
@@ -730,7 +731,7 @@
       if (unstaged.length === 0) {
         list.append(h("div", { class: "empty-files" }, status.unstaged.length === 0 ? "Working tree clean" : "Nothing matches filter"));
       } else {
-        unstaged.forEach((f) => list.append(renderFileRow(f, "unstaged", diffNode)));
+        unstaged.forEach((f) => list.append(renderFileRow(f, "unstaged", diffNode, filter)));
       }
 
       const split = h("div", { class: "status-split" }, list, diffNode);
@@ -899,7 +900,7 @@
       for (const b of filteredLocal) {
         list.append(h("div", { class: "branch-row" + (b.isCurrent ? " is-current" : "") },
           h("span", { class: "branch-marker" }, b.isCurrent ? "●" : ""),
-          h("span", { class: "branch-name", title: b.name }, b.name),
+          h("span", { class: "branch-name", title: b.name, html: window.GMText.highlightMatches(b.name, state.branchFilter.toLowerCase()) }),
           h("span", { class: "branch-meta" }, b.upstream ? `${b.upstream} ${b.track}` : ""),
           h("span", { class: "branch-actions" },
             !b.isCurrent && h("button", { class: "row-action", onClick: () => checkout(b) }, "switch"),
@@ -914,13 +915,17 @@
         for (const b of filteredRemote) {
           list.append(h("div", { class: "branch-row" },
             h("span", { class: "branch-marker" }, ""),
-            h("span", { class: "branch-name", title: b.name }, b.name),
+            h("span", { class: "branch-name", title: b.name, html: window.GMText.highlightMatches(b.name, state.branchFilter.toLowerCase()) }),
             h("span", { class: "branch-meta" }, b.sha),
             h("span", { class: "branch-actions" },
               h("button", { class: "row-action", onClick: () => checkout(b) }, "check out"),
             ),
           ));
         }
+      }
+
+      if (filteredLocal.length === 0 && filteredRemote.length === 0 && state.branchFilter) {
+        list.append(h("div", { class: "empty-files" }, "Tidak ada branch yang cocok dengan “" + state.branchFilter + "”."));
       }
 
       node.append(list);
@@ -1203,7 +1208,7 @@
         },
           h("span", { class: "log-sha" }, c.sha),
           h("span", null,
-            h("span", { class: "log-msg-line", title: c.msg }, c.msg),
+            h("span", { class: "log-msg-line", title: c.msg, html: window.GMText.highlightMatches(c.msg, (state.historyFilter || "").toLowerCase()) }),
             h("span", { class: "log-meta" }, `${c.author} · ${c.when}`),
           ),
         );
@@ -1337,7 +1342,7 @@
           h("button", { class: "row-action", onClick: () => move(i, -1), disabled: i === 0 }, "↑"),
           h("button", { class: "row-action", onClick: () => move(i, +1), disabled: i === state.rebasePlan.length - 1 }, "↓"),
         );
-        node.append(h("div", { class: "rebase-todo-row" + (c.op === "drop" ? " is-drop" : "") },
+        node.append(h("div", { class: "rebase-todo-row" + (c.op === "drop" ? " is-drop" : ""), dataset: { op: c.op } },
           grip,
           sel,
           h("span", { class: "log-sha" }, c.sha),
@@ -1564,7 +1569,7 @@
       } else {
         for (const t of visible) {
           list.append(h("div", { class: "tag-row" },
-            h("span", { class: "tag-name", title: t.name }, t.name),
+            h("span", { class: "tag-name", title: t.name, html: window.GMText.highlightMatches(t.name, f) }),
             h("span", { class: "tag-sha" }, t.sha),
             h("span", { class: "tag-msg", title: t.msg }, t.msg),
             h("span", { class: "tag-actions" },

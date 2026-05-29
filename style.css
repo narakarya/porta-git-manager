@@ -65,21 +65,11 @@ code, kbd, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, 
 .tab:hover { color: var(--text); background: var(--bg-hover); }
 .tab.is-active { color: var(--text); background: rgba(96, 165, 250, 0.12); }
 
-.tab-badge {
-  font-size: 9px;
-  font-weight: 600;
-  padding: 0 5px;
-  border-radius: 8px;
-  background: var(--bg-hover);
-  color: var(--text-mute);
-  min-width: 14px;
-  text-align: center;
-  line-height: 14px;
-  display: none;
-}
-.tab-badge.show { display: inline-block; }
-.tab.is-active .tab-badge { background: rgba(96, 165, 250, 0.18); color: var(--blue); }
-.tab-badge.urgent { background: rgba(251, 191, 36, 0.18); color: var(--amber); }
+.tab-badge { font-size:9px; font-weight:600; padding:0 5px; border-radius:8px; background:var(--bg-hover);
+  color:var(--text-mute); min-width:14px; text-align:center; line-height:14px; visibility:hidden; }
+.tab-badge.show { visibility:visible; }
+.tab.is-active .tab-badge { background:rgba(96,165,250,.18); color:var(--blue); }
+.tab-badge.urgent { background:rgba(251,191,36,.18); color:var(--amber); visibility:visible; }
 
 .tab-spacer { flex: 1; }
 
@@ -835,6 +825,9 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 }
 .stash-row:hover .stash-actions { opacity: 1; }
 
+.tag-row, .stash-row, .remote-row { border-left:2px solid transparent; }
+.tag-row:hover, .stash-row:hover, .remote-row:hover { background:var(--bg-hover); }
+
 /* ─── Empty / loading state ──────────────────────────────────────────────── */
 .empty {
   flex: 1;
@@ -876,7 +869,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
   min-width: 200px;
   max-width: 360px;
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   font-size: 11px;
   background: #1c1c1e;
   border: 1px solid var(--border-hi);
@@ -921,7 +914,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 .modal-card {
   background: #1c1c1e;
   border: 1px solid var(--border-hi);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   min-width: 320px;
   max-width: 480px;
   padding: 18px 20px;
@@ -950,6 +943,13 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
   from { opacity: 0; transform: scale(0.96); }
   to   { opacity: 1; transform: scale(1); }
 }
+
+.sync-action .name svg { width:13px; height:13px; opacity:.9; }
+.sync-action:focus-visible { border-color:var(--blue); }
+
+.rebase-todo-row[data-op="squash"] .grip, .rebase-todo-row[data-op="fixup"] .grip { color:var(--amber); }
+.rebase-todo-row[data-op="drop"] { opacity:.45; }
+.rebase-todo-row select { border-radius:var(--radius-sm); }
 
 /* Visible-at-rest action affordance (replaces opacity:0 patterns) */
 .row-actions, .branch-actions, .tag-actions, .stash-actions, .remote-actions, .hunk-actions {

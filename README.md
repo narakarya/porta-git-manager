@@ -15,6 +15,33 @@ pure HTML + JS + CSS that talks to Porta via `window.portaBridge`.
 | **Stash** | List, save (with message + include-untracked toggle), apply, pop, drop. |
 | **Tags** *(new in 0.3.0)* | Create lightweight or annotated tags, push to origin, delete locally, delete on origin. Filter input for finding among many. |
 
+## UI/UX overhaul (0.5.0)
+
+A systemic visual refresh built on a single design-token system:
+
+- **Diffs** (Status + History, unified *and* split) now render a **line-number
+  gutter**, **word-level change highlighting** (only the changed tokens within a
+  `-`/`+` pair are emphasized), and **syntax highlighting** for common languages
+  (JS/TS/JSX, JSON, CSS, HTML, Markdown, shell, Rust, Python). Unknown file types
+  fall back to plain rendering — highlighting can never break a diff.
+- **Search-match highlighting**: typing in the Status / Branches / History / Tags
+  filters wraps the matched substring in a `mark`, so you see *why* a row matched.
+  Branches gets a friendly empty-filter message.
+- **Visible-at-rest actions**: row actions (stage/unstage/discard, branch/stash/tag
+  buttons, per-hunk actions) are now faintly visible instead of hidden until hover,
+  and brighten on hover/selection.
+- Tab badges reserve their space (no layout shift), rebase todo rows are
+  colour-coded per op, and focus rings support keyboard navigation.
+
+The diff/word/syntax/search logic lives in three small, unit-tested modules
+(`text-util.js`, `diff-util.js`, `highlight.js`). Run the tests with:
+
+```bash
+node --test extensions-bundled/git-manager/test/text-util.test.mjs \
+            extensions-bundled/git-manager/test/diff-util.test.mjs \
+            extensions-bundled/git-manager/test/highlight.test.mjs
+```
+
 ## UX shortcuts
 
 - `1`–`7` switch tabs (Status / Branches / Sync / History / Rebase / Stash / Tags).
