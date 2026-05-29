@@ -205,11 +205,12 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 }
 
 /* ─── Status pane (split view) ──────────────────────────────────────────── */
-/* Prefixed with `.pane.` so the grid layout overrides `.pane.is-active`'s
-   flex (same specificity, source order wins). Without this the split
-   view doesn't get a 1fr middle row and the diff panel collapses to
-   zero height — user sees just the toolbar at the top. */
-.pane.status-pane {
+/* The selector includes `.is-active` so it only kicks in for the visible
+   pane — otherwise `.pane.status-pane` would beat `.pane { display: none }`
+   on specificity and the *inactive* pane would still render. Without the
+   `is-active` clause every tab's content piles on top of every other
+   tab's. */
+.pane.is-active.status-pane {
   display: grid;
   grid-template-rows: 36px 1fr auto;
   height: 100%;
@@ -490,7 +491,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 .diff-cell.diff-meta { color: var(--text-dim); }
 
 /* ─── Tags pane ──────────────────────────────────────────────────────────── */
-.pane.tags-pane { display: flex; flex-direction: column; height: 100%; }
+.pane.is-active.tags-pane { display: flex; flex-direction: column; height: 100%; }
 .tags-top {
   display: flex;
   gap: 6px;
@@ -618,9 +619,9 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 }
 
 /* ─── Branches pane ──────────────────────────────────────────────────────── */
-/* `.pane.` prefix matches the `.pane.is-active` specificity so layout
-   class wins via source order — same reason as `.pane.status-pane`. */
-.pane.branches-pane { display: flex; flex-direction: column; height: 100%; }
+/* See `.pane.is-active.status-pane` — same reasoning, the `.is-active`
+   clause keeps the layout class from rendering inactive panes. */
+.pane.is-active.branches-pane { display: flex; flex-direction: column; height: 100%; }
 .branches-top {
   display: flex;
   gap: 8px;
@@ -682,7 +683,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 .branch-row:hover .branch-actions { opacity: 1; }
 
 /* ─── History pane ───────────────────────────────────────────────────────── */
-.pane.history-pane { display: flex; flex-direction: column; height: 100%; }
+.pane.is-active.history-pane { display: flex; flex-direction: column; height: 100%; }
 .history-top {
   display: flex;
   gap: 8px;
@@ -816,7 +817,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 .in-progress-banner svg { flex-shrink: 0; margin-top: 2px; }
 
 /* ─── Stash pane ─────────────────────────────────────────────────────────── */
-.pane.stash-pane { display: flex; flex-direction: column; height: 100%; }
+.pane.is-active.stash-pane { display: flex; flex-direction: column; height: 100%; }
 .stash-top {
   display: flex;
   gap: 6px;
