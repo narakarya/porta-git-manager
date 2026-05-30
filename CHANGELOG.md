@@ -4,6 +4,15 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.12] — 2026-05-30
+
+### Changed
+- **Toolbar headers are cleaner across the app.** Branches, Stash, Tags, and PR headers now use consistent spacing, wrapping, input sizing, and checkbox alignment.
+- **Branch list prioritizes the branches users reach for most.** The current branch stays first, followed by `main`, `master`, then the rest alphabetically. Remote branches remain grouped in the Remote section.
+
+### Fixed
+- **Stash and branch bulk-selection bars no longer float with awkward gaps.** The selected-count bar now sits flush above the list with stable spacing.
+
 ## [0.7.11] — 2026-05-30
 
 ### Changed

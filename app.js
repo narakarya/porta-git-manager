@@ -1668,7 +1668,7 @@
         onInput: (e) => { state.branchFilter = e.target.value; paint(); },
       });
       const newInput = h("input", {
-        class: "input", style: { maxWidth: "240px" },
+        class: "input branch-create-input",
         placeholder: "New branch name…",
         value: newBranchName,
         onInput: (e) => { newBranchName = e.target.value; },
@@ -1676,7 +1676,7 @@
       });
       const top = h("div", { class: "branches-top" },
         filterInput,
-        h("div", { style: { flex: "1" } }),
+        h("div", { class: "toolbar-spacer" }),
         newInput,
         h("button", { class: "btn-primary", onClick: createBranch, disabled: !newBranchName.trim() }, "Create"),
       );
@@ -1704,6 +1704,13 @@
       const match = (b) => !f || b.name.toLowerCase().includes(f);
       const hl = (s) => window.GMText.highlightMatches(s, f);
       const toggle = (name, on) => { if (on) selected.add(name); else selected.delete(name); paint(); };
+      const branchSortKey = (b) => {
+        if (b.isCurrent) return "0:";
+        if (b.name === "main") return "1:";
+        if (b.name === "master") return "2:";
+        return "3:" + b.name.toLowerCase();
+      };
+      const sortBranches = (items) => items.slice().sort((a, b) => branchSortKey(a).localeCompare(branchSortKey(b)));
 
       // Local-branch facet predicate (chips below the search box).
       const facetMatch = (b) => {
@@ -1820,7 +1827,7 @@
 
       const list = h("div", { class: "branches-list" });
 
-      const filteredLocal = local.filter((b) => match(b) && facetMatch(b));
+      const filteredLocal = sortBranches(local.filter((b) => match(b) && facetMatch(b)));
       list.append(h("div", { class: "branch-section-title" }, "Local", h("span", { class: "count" }, String(filteredLocal.length))));
       if (filteredLocal.length === 0) list.append(h("div", { class: "empty-files" }, "No matching local branches"));
       for (const b of filteredLocal) {
@@ -1836,7 +1843,7 @@
       }
 
       // Facets describe local branches only — hide remotes when one is active.
-      const filteredRemote = facet === "all" ? remote.filter(match) : [];
+      const filteredRemote = facet === "all" ? sortBranches(remote.filter(match)) : [];
       if (filteredRemote.length > 0) {
         list.append(h("div", { class: "branch-section-title" }, "Remote", h("span", { class: "count" }, String(filteredRemote.length))));
         for (const b of filteredRemote) {
@@ -2589,7 +2596,7 @@
       node.className = "pane is-active stash-pane";
 
       const msgInput = h("input", {
-        class: "input", style: { maxWidth: "320px" },
+        class: "input stash-message-input",
         placeholder: "Stash message (optional)",
         value: msg,
         onInput: (e) => { msg = e.target.value; },
@@ -2598,7 +2605,7 @@
       const untrackedChk = h("input", { type: "checkbox", checked: includeUntracked, onChange: (e) => { includeUntracked = e.target.checked; } });
       node.append(h("div", { class: "stash-top" },
         msgInput,
-        h("label", { class: "commit-options", style: { whiteSpace: "nowrap" } }, untrackedChk, "include untracked"),
+        h("label", { class: "toolbar-check" }, untrackedChk, "include untracked"),
         h("button", { class: "btn-primary", onClick: save }, "Stash"),
       ));
 
@@ -2757,14 +2764,14 @@
       node.className = "pane is-active tags-pane";
 
       const nameInput = h("input", {
-        class: "input", style: { maxWidth: "180px" },
+        class: "input tag-name-input",
         placeholder: "Tag name (e.g. v1.0.0)",
         value: newName,
         onInput: (e) => { newName = e.target.value; },
         onKeydown: (e) => { if (e.key === "Enter") create(); },
       });
       const msgInput = h("input", {
-        class: "input", style: { maxWidth: "240px" },
+        class: "input tag-message-input",
         placeholder: "Message (annotated tags)",
         value: newMsg,
         onInput: (e) => { newMsg = e.target.value; },
@@ -2775,7 +2782,7 @@
         onChange: (e) => { annotated = e.target.checked; render(); },
       });
       const filterInput = h("input", {
-        class: "history-search", style: { maxWidth: "180px" },
+        class: "history-search tag-filter-input",
         placeholder: "Filter…",
         value: filter,
         onInput: (e) => { caretPos = e.target.selectionStart; filter = e.target.value; render(); },
@@ -2784,9 +2791,9 @@
       node.append(h("div", { class: "tags-top" },
         nameInput,
         msgInput,
-        h("label", { class: "commit-options", style: { whiteSpace: "nowrap" } }, annChk, "annotated"),
+        h("label", { class: "toolbar-check" }, annChk, "annotated"),
         h("button", { class: "btn-primary", onClick: create, disabled: !newName.trim() }, "Create"),
-        h("div", { style: { flex: "1" } }),
+        h("div", { class: "toolbar-spacer" }),
         filterInput,
       ));
       // Keep the caret where the user was typing across the filter re-render.
@@ -3129,7 +3136,7 @@
       });
       node.append(h("div", { class: "pr-top" },
         filterInput,
-        h("div", { style: { flex: "1" } }),
+        h("div", { class: "toolbar-spacer" }),
         h("button", { class: "btn-primary", onClick: () => { creating = true; newTitle = ""; newBody = ""; render(); } }, "New PR"),
       ));
 
