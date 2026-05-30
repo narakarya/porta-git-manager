@@ -4,6 +4,16 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.4] — 2026-05-30
+
+### Fixed
+- **Rebase tab actually scrolls.** Long plans had `flex-shrink: 1` on children, so when row count exceeded pane height the plan compressed and `.rebase-plan`'s `overflow: hidden` clipped the middle rows — the visible bug was rows 1–5 + row 10 with a gap and the footer floating. `.rebase-pane > * { flex-shrink: 0 }` now lets the plan keep its natural height and the pane scrolls.
+- **Fullscreen modal actually goes fullscreen now.** The 0.7.3 selector `.modal-card.is-fullscreen` (2 classes) lost the specificity battle against `.modal-card.modal-wide` (also 2 classes) which sets `max-width: 92vw` / `max-height: 86vh`. Bumped fullscreen selector to `.modal-card.modal-wide.is-fullscreen` (3 classes) so it wins.
+- **Wrap default is now ON.** First-time users see wrapped lines instead of horizontal scroll. The existing `localStorage` persistence preserves whatever the user changes to.
+
+### Added
+- **Rebase: `reword` op.** Selecting reword on a commit opens a modal asking for a new message; the new value previews inline below the original as `→ <new>`. On Start rebase, reword commits expand to `pick <sha>` + `exec git commit --amend -m <new>` in the todo file, so the message rewrites cleanly during the non-interactive rebase. Cancelling the new-message modal reverts the select to its previous op.
+
 ## [0.7.3] — 2026-05-30
 
 ### Fixed
