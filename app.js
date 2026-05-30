@@ -1856,6 +1856,26 @@
       const r = await git("show --no-color --format= -p " + quote(commit.sha));
       const files = gmParseDiffDoc(r.stdout);
       lastFiles = files;
+
+      const totals = files.reduce((acc, f) => {
+        const s = gmFileStats(f); acc.add += s.add; acc.del += s.del; return acc;
+      }, { add: 0, del: 0 });
+      const total = totals.add + totals.del || 1;
+      const addPct = (totals.add / total) * 100;
+      const strip = h("div", { class: "commit-stat-strip" },
+        h("span", { class: "stat-files" }, files.length + " file" + (files.length === 1 ? "" : "s") + " changed"),
+        h("span", { class: "stat-sep" }, "·"),
+        h("span", { class: "stat-add" }, "+" + totals.add),
+        h("span", { class: "stat-sep" }, "/"),
+        h("span", { class: "stat-del" }, "−" + totals.del),
+        h("span", { class: "stat-bar" },
+          h("span", { class: "stat-bar-add", style: { width: addPct + "%" } }),
+          h("span", { class: "stat-bar-del", style: { width: (100 - addPct) + "%" } }),
+        ),
+      );
+      // Insert strip BEFORE the diff so it visually delimits header card → diff.
+      detailNode.insertBefore(strip, diffWrap);
+
       gmRenderDiffDoc(diffWrap, files);
     }
 
