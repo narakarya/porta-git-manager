@@ -241,7 +241,7 @@
      * Used by the stash and branch "View"/"Diff" previews — rendering only,
      * no stage/discard actions. Resolves when dismissed.
      */
-    diffModal({ title, subtitle, files, refetch }) {
+    diffModal({ title, subtitle, files, refetch, actions }) {
       return new Promise((resolve) => {
         const root = $("#modal-root");
         // Double-open guard: if a *real* modal is already up, refuse. A
@@ -251,7 +251,10 @@
         if (root.dataset.loadingActive) delete root.dataset.loadingActive;
         root.hidden = false;
         root.innerHTML = "";
+        let closed = false;
         const close = () => {
+          if (closed) return;
+          closed = true;
           root.hidden = true;
           root.classList.remove("modal-root-fullscreen");
           root.innerHTML = "";
@@ -335,6 +338,7 @@
             const visible = gmFilterFiles(currentFiles, treeFilter);
             const allRow = h("button", {
               class: "diff-tree-row diff-tree-all" + (!treeFilter && (!activeRowRef.row || activeRowRef.row === null) ? " is-active" : ""),
+              tabIndex: -1,
               onMouseDown: (e) => e.preventDefault(),
               onClick: () => { setActive(allRow); showList(visible); },
             },
@@ -427,6 +431,14 @@
           fsBtn.textContent = fullscreen ? "Restore" : "Full";
         }
         const viewOpts = h("div", { class: "diff-modal-opts" }, wrapLabel);
+        const actionBar = Array.isArray(actions) && actions.length
+          ? h("div", { class: "diff-modal-actions" },
+            ...actions.map((action) => h("button", {
+              class: action.danger ? "btn-mini danger" : "btn-mini",
+              title: action.title || action.label,
+              onClick: (e) => action.onClick && action.onClick({ close, button: e.currentTarget }),
+            }, action.label)))
+          : null;
 
         const toggle = h("div", { class: "view-toggle" },
           h("button", {
@@ -460,6 +472,7 @@
             optsBar,
             viewOpts,
             toggle,
+            actionBar,
             fsBtn,
             h("button", { class: "btn-ghost", onClick: close }, "Close"),
           ),
@@ -799,6 +812,7 @@
         const row = h("button", {
           class: "diff-tree-row diff-tree-file" + statusCls + (rowClassFor(f) ? " " + rowClassFor(f) : ""),
           style: { paddingLeft: (depth * 12 + 10) + "px" },
+          tabIndex: -1,
           onMouseDown: (e) => e.preventDefault(),
           onClick: (e) => onPick(f, row, e),
         }, ...(Array.isArray(inner) ? inner : [inner]));
@@ -1902,7 +1916,41 @@
           subtitle = files.length + " files HEAD carries that this branch doesn't";
         }
 
-        await ui.diffModal({ title, subtitle, files, refetch: fetchFiles });
+        await ui.diffModal({
+          title,
+          subtitle,
+          files,
+          refetch: fetchFiles,
+          actions: [
+            {
+              label: selected.has(b.name) ? "Selected" : "Select",
+              title: selected.has(b.name) ? "Remove this branch from selection" : "Select this branch",
+              onClick: ({ button }) => {
+                if (selected.has(b.name)) {
+                  selected.delete(b.name);
+                  button.textContent = "Select";
+                  button.title = "Select this branch";
+                } else {
+                  selected.add(b.name);
+                  button.textContent = "Selected";
+                  button.title = "Remove this branch from selection";
+                }
+                paint();
+                paintViewing();
+              },
+            },
+            !b.isCurrent && {
+              label: b.isRemote ? "Delete remote" : "Delete",
+              title: b.isRemote ? "Delete this remote branch" : "Delete this branch",
+              danger: true,
+              onClick: ({ close }) => {
+                close();
+                if (b.isRemote) deleteRemoteBranch(b);
+                else deleteBranch(b.name);
+              },
+            },
+          ].filter(Boolean),
+        });
       } catch (err) {
         ui.hideLoading();
         ui.toast(err.message || "Diff failed", "error", 5000);
@@ -2837,6 +2885,34 @@
           subtitle: s.desc || null,
           files,
           refetch: fetchFiles,
+          actions: [
+            {
+              label: selectedRefs.has(s.ref) ? "Selected" : "Select",
+              title: selectedRefs.has(s.ref) ? "Remove this stash from selection" : "Select this stash",
+              onClick: ({ button }) => {
+                if (selectedRefs.has(s.ref)) {
+                  selectedRefs.delete(s.ref);
+                  button.textContent = "Select";
+                  button.title = "Select this stash";
+                } else {
+                  selectedRefs.add(s.ref);
+                  button.textContent = "Selected";
+                  button.title = "Remove this stash from selection";
+                }
+                paint();
+                paintViewing();
+              },
+            },
+            {
+              label: "Drop",
+              title: "Drop this stash",
+              danger: true,
+              onClick: ({ close }) => {
+                close();
+                drop(s.ref);
+              },
+            },
+          ],
         });
       } catch (err) {
         ui.hideLoading();

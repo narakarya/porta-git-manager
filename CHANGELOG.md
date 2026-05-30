@@ -4,6 +4,14 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.21] — 2026-05-30
+
+### Added
+- **Diff viewer headers now expose item actions.** Stash viewers include Select and Drop actions; branch viewers include Select plus Delete/Delete remote.
+
+### Fixed
+- **File selections in the diff viewer avoid focus-driven scroll jumps.** File-tree rows are no longer focus targets when clicked, keeping modal browsing steadier.
+
 ## [0.7.20] — 2026-05-30
 
 ### Changed

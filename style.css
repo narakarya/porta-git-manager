@@ -1381,6 +1381,12 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
   text-overflow: ellipsis;
 }
 .diff-modal-head .btn-ghost { flex: none; }
+.diff-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
 .diff-modal-main {
   display: flex;
   min-height: 0;
