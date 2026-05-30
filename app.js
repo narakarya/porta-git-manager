@@ -300,9 +300,33 @@
     }
     for (const f of files) {
       const lang = window.GMHi.langFromPath(f.path || "");
+      const block = h("div", { class: "diff-file-block" });
+      const body  = h("div", { class: "diff-file-body" });
+
+      // Sticky header: chevron + icon + path + +/- stats pills.
+      const st = gmFileStats(f);
+      const chev = h("span", { class: "chev" }, "▾");
+      const head = h("div", { class: "diff-file-head" },
+        chev,
+        gmFileIcon(f.path),
+        h("span", { class: "path" }, f.path || "(unnamed)"),
+        h("span", { class: "stats" },
+          st.add ? h("span", { class: "stat-add" }, "+" + st.add) : null,
+          st.del ? h("span", { class: "stat-del" }, "−" + st.del) : null,
+        ),
+      );
+      head.addEventListener("click", () => {
+        const collapsed = block.classList.toggle("is-collapsed");
+        chev.textContent = collapsed ? "▸" : "▾";
+      });
+      block.append(head);
+
+      // git's "diff --git …" / "+++" / "---" header lines go inside the
+      // body (still visible when expanded, hidden when collapsed) — they're
+      // noise once the sticky header above shows the same path nicely.
       for (const m of f.header) {
-        const cls = (m.startsWith("diff ") || m.startsWith("+++") || m.startsWith("---")) ? "diff-file" : "diff-meta";
-        node.append(h("span", { class: "diff-line " + cls }, m || " "));
+        if (m.startsWith("diff ") || m.startsWith("+++") || m.startsWith("---")) continue;
+        body.append(h("span", { class: "diff-line diff-meta" }, m || " "));
       }
       for (const hunk of f.hunks) {
         const wrapper = h("div", { class: "hunk" });
@@ -326,8 +350,11 @@
             h("span", { class: "diff-code", html: gmDiffCodeHtml(lineBody, lang, r._wd || null) }),
           ));
         }
-        node.append(wrapper);
+        body.append(wrapper);
       }
+
+      block.append(body);
+      node.append(block);
     }
   }
 
