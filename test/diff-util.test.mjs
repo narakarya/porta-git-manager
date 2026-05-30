@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import pkg from "../diff-util.js";
-const { parseHunkHeader, numberHunkLines, wordDiff } = pkg;
+const { parseHunkHeader, numberHunkLines, wordDiff, toSplitRows } = pkg;
 
 test("parseHunkHeader reads both ranges", () => {
   assert.deepEqual(parseHunkHeader("@@ -12,6 +12,7 @@ render()"),
@@ -45,4 +45,50 @@ test("wordDiff on identical bodies marks nothing changed", () => {
   const r = wordDiff("-same line", "+same line");
   assert.ok(r.del.every(x => !x.changed));
   assert.ok(r.add.every(x => !x.changed));
+});
+
+test("toSplitRows pairs adjacent del/add into left/right cells", () => {
+  const numbered = [
+    { kind: "ctx", text: " hi",   oldNo: 1, newNo: 1 },
+    { kind: "del", text: "-old",  oldNo: 2, newNo: null },
+    { kind: "add", text: "+new",  oldNo: null, newNo: 2 },
+    { kind: "ctx", text: " bye",  oldNo: 3, newNo: 3 },
+  ];
+  const rows = toSplitRows(numbered);
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].left.kind, "ctx");
+  assert.equal(rows[0].right.kind, "ctx");
+  assert.equal(rows[1].left.kind, "del");
+  assert.equal(rows[1].right.kind, "add");
+  // Paired del/add gets word-diff attached
+  assert.ok(rows[1].left._wd);
+  assert.ok(rows[1].right._wd);
+  assert.equal(rows[1].left._wd.cls, "wd-del");
+  assert.equal(rows[1].right._wd.cls, "wd-add");
+});
+
+test("toSplitRows handles uneven dels/adds (longer side spills)", () => {
+  const numbered = [
+    { kind: "del", text: "-a", oldNo: 1, newNo: null },
+    { kind: "del", text: "-b", oldNo: 2, newNo: null },
+    { kind: "add", text: "+x", oldNo: null, newNo: 1 },
+  ];
+  const rows = toSplitRows(numbered);
+  assert.equal(rows.length, 2);
+  // First row has both sides
+  assert.equal(rows[0].left.kind, "del");
+  assert.equal(rows[0].right.kind, "add");
+  // Second row has only the leftover del; right is null
+  assert.equal(rows[1].left.kind, "del");
+  assert.equal(rows[1].right, null);
+});
+
+test("toSplitRows ignores meta rows", () => {
+  const numbered = [
+    { kind: "meta", text: "\\ No newline at end of file", oldNo: null, newNo: null },
+    { kind: "ctx",  text: " x", oldNo: 1, newNo: 1 },
+  ];
+  const rows = toSplitRows(numbered);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].left.kind, "ctx");
 });

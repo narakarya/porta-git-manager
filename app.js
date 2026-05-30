@@ -199,7 +199,15 @@
         window.addEventListener("keydown", onKey, true);
 
         const content = h("div", { class: "diff-modal-content" });
-        const showList = (list) => { gmRenderDiffDoc(content, list); content.scrollTop = 0; };
+        let viewMode = "unified";
+        let currentList = files;
+        const renderInto = (list) => {
+          currentList = list;
+          if (viewMode === "split") gmRenderDiffDocSplit(content, list);
+          else gmRenderDiffDoc(content, list);
+          content.scrollTop = 0;
+        };
+        const showList = (list) => renderInto(list);
 
         let main;
         if (files.length > 1) {
@@ -230,12 +238,36 @@
           main = h("div", { class: "diff-modal-main is-single" }, content);
         }
 
+        const toggle = h("div", { class: "view-toggle" },
+          h("button", {
+            class: "view-toggle-btn is-active",
+            onClick: (e) => {
+              if (viewMode === "unified") return;
+              viewMode = "unified";
+              e.currentTarget.parentElement.querySelectorAll(".view-toggle-btn").forEach((b) => b.classList.remove("is-active"));
+              e.currentTarget.classList.add("is-active");
+              renderInto(currentList);
+            },
+          }, "Unified"),
+          h("button", {
+            class: "view-toggle-btn",
+            onClick: (e) => {
+              if (viewMode === "split") return;
+              viewMode = "split";
+              e.currentTarget.parentElement.querySelectorAll(".view-toggle-btn").forEach((b) => b.classList.remove("is-active"));
+              e.currentTarget.classList.add("is-active");
+              renderInto(currentList);
+            },
+          }, "Split"),
+        );
+
         const card = h("div", { class: "modal-card modal-wide" },
           h("div", { class: "diff-modal-head" },
             h("div", { class: "diff-modal-title" },
               h("h3", null, title),
               subtitle && h("p", { class: "diff-modal-sub", title: subtitle }, subtitle),
             ),
+            toggle,
             h("button", { class: "btn-ghost", onClick: close }, "Close"),
           ),
           main,
@@ -353,6 +385,67 @@
         body.append(wrapper);
       }
 
+      block.append(body);
+      node.append(block);
+    }
+  }
+
+  /**
+   * Render parsed files into `node` in side-by-side (split) view. Re-uses the
+   * shared toSplitRows helper from window.GMDiff. Identical sticky-header +
+   * collapse behaviour as gmRenderDiffDoc.
+   */
+  function gmRenderDiffDocSplit(node, files) {
+    node.innerHTML = "";
+    if (!files || !files.length) {
+      node.append(h("div", { class: "status-diff-empty" }, "No changes to show."));
+      return;
+    }
+    for (const f of files) {
+      const lang = window.GMHi.langFromPath(f.path || "");
+      const block = h("div", { class: "diff-file-block" });
+      const body  = h("div", { class: "diff-file-body" });
+      const st = gmFileStats(f);
+      const chev = h("span", { class: "chev" }, "▾");
+      const head = h("div", { class: "diff-file-head" },
+        chev,
+        gmFileIcon(f.path),
+        h("span", { class: "path" }, f.path || "(unnamed)"),
+        h("span", { class: "stats" },
+          st.add ? h("span", { class: "stat-add" }, "+" + st.add) : null,
+          st.del ? h("span", { class: "stat-del" }, "−" + st.del) : null,
+        ),
+      );
+      head.addEventListener("click", () => {
+        const collapsed = block.classList.toggle("is-collapsed");
+        chev.textContent = collapsed ? "▸" : "▾";
+      });
+      block.append(head);
+
+      for (const hunk of f.hunks) {
+        const wrapper = h("div", { class: "hunk hunk-split" });
+        wrapper.append(h("div", { class: "hunk-header" }, hunk.header));
+        const range = window.GMDiff.parseHunkHeader(hunk.header);
+        const numbered = window.GMDiff.numberHunkLines(hunk.lines, range);
+        const splitRows = window.GMDiff.toSplitRows(numbered);
+        const grid = h("div", { class: "diff-split" });
+        function cell(side, c) {
+          if (!c) {
+            return h("span", { class: "diff-cell diff-cell-" + side + " diff-blank" },
+              h("span", { class: "diff-gutter" }, ""),
+              h("span", { class: "diff-code", html: " " }));
+          }
+          const lineBody = c.text.slice(1) || " ";
+          return h("span", { class: "diff-cell diff-cell-" + side + " diff-" + c.kind },
+            h("span", { class: "diff-gutter" }, c.no == null ? "" : String(c.no)),
+            h("span", { class: "diff-code", html: gmDiffCodeHtml(lineBody, lang, c._wd || null) }));
+        }
+        for (const sr of splitRows) {
+          grid.append(cell("left", sr.left), cell("right", sr.right));
+        }
+        wrapper.append(grid);
+        body.append(wrapper);
+      }
       block.append(body);
       node.append(block);
     }
@@ -736,47 +829,25 @@
      */
     function renderSplitHunkBody(wrapper, hunk, lang) {
       const range = window.GMDiff.parseHunkHeader(hunk.header);
+      const numbered = window.GMDiff.numberHunkLines(hunk.lines, range);
+      const splitRows = window.GMDiff.toSplitRows(numbered);
       const grid = h("div", { class: "diff-split" });
-      let oldNo = range.oldStart, newNo = range.newStart;
-      let dels = [], adds = [];
 
-      function cell(side, kind, no, body, wd) {
-        const code = h("span", { class: "diff-code",
-          html: body == null ? " " : diffCodeHtml(body || " ", lang, wd || null) });
-        return h("span", { class: "diff-cell diff-cell-" + side + " " + (body == null ? "diff-blank" : "diff-" + kind) },
-          h("span", { class: "diff-gutter" }, no == null ? "" : String(no)), code);
-      }
-
-      function flush() {
-        const n = Math.max(dels.length, adds.length);
-        for (let i = 0; i < n; i++) {
-          const left = i < dels.length ? dels[i] : null;
-          const right = i < adds.length ? adds[i] : null;
-          let lwd = null, rwd = null;
-          if (left && right) { const d = window.GMDiff.wordDiff(left.text, right.text); lwd = d.del; lwd.cls = "wd-del"; rwd = d.add; rwd.cls = "wd-add"; }
-          grid.append(
-            cell("left", "del", left ? left.no : null, left ? left.text.slice(1) : null, lwd),
-            cell("right", "add", right ? right.no : null, right ? right.text.slice(1) : null, rwd),
-          );
+      function cell(side, c) {
+        if (!c) {
+          return h("span", { class: "diff-cell diff-cell-" + side + " diff-blank" },
+            h("span", { class: "diff-gutter" }, ""),
+            h("span", { class: "diff-code", html: " " }));
         }
-        dels = []; adds = [];
+        const body = c.text.slice(1) || " ";
+        return h("span", { class: "diff-cell diff-cell-" + side + " diff-" + c.kind },
+          h("span", { class: "diff-gutter" }, c.no == null ? "" : String(c.no)),
+          h("span", { class: "diff-code", html: diffCodeHtml(body, lang, c._wd || null) }));
       }
 
-      for (const line of hunk.lines) {
-        const c = line[0];
-        if (c === "-") { dels.push({ text: line, no: oldNo++ }); }
-        else if (c === "+") { adds.push({ text: line, no: newNo++ }); }
-        else if (c === "\\") { /* no-newline marker: ignore in split */ }
-        else {
-          flush();
-          grid.append(
-            cell("left", "ctx", oldNo, line.slice(1), null),
-            cell("right", "ctx", newNo, line.slice(1), null),
-          );
-          oldNo++; newNo++;
-        }
+      for (const sr of splitRows) {
+        grid.append(cell("left", sr.left), cell("right", sr.right));
       }
-      flush();
       wrapper.appendChild(grid);
     }
 

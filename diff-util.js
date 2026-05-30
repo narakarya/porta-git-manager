@@ -51,5 +51,53 @@
     return { del, add };
   }
 
-  return { parseHunkHeader, numberHunkLines, wordDiff };
+  /**
+   * Transform unified `numberHunkLines` output into split (side-by-side) rows.
+   * Consecutive del/add runs are paired position-wise (1st del with 1st add,
+   * etc.). Uneven runs spill into rows where the longer side has a non-null
+   * cell and the shorter side is null (rendered as blank). Context lines
+   * mirror on both sides. Meta rows are dropped (split layout has no place
+   * to put a "\\ No newline at end of file" marker symmetrically).
+   *
+   * Returns: [{ left: cell|null, right: cell|null }, ...]
+   * Cell shape: { kind, no, text, _wd? }
+   */
+  function toSplitRows(numbered) {
+    const rows = [];
+    let dels = [], adds = [];
+    function flush() {
+      const n = Math.max(dels.length, adds.length);
+      for (let i = 0; i < n; i++) {
+        const L = i < dels.length ? dels[i] : null;
+        const R = i < adds.length ? adds[i] : null;
+        let lwd = null, rwd = null;
+        if (L && R) {
+          const d = wordDiff(L.text, R.text);
+          lwd = d.del; lwd.cls = "wd-del";
+          rwd = d.add; rwd.cls = "wd-add";
+        }
+        rows.push({
+          left:  L ? { kind: "del", no: L.oldNo, text: L.text, _wd: lwd } : null,
+          right: R ? { kind: "add", no: R.newNo, text: R.text, _wd: rwd } : null,
+        });
+      }
+      dels = []; adds = [];
+    }
+    for (const r of numbered) {
+      if (r.kind === "del") dels.push(r);
+      else if (r.kind === "add") adds.push(r);
+      else if (r.kind === "meta") { /* dropped in split layout */ }
+      else {
+        flush();
+        rows.push({
+          left:  { kind: "ctx", no: r.oldNo, text: r.text },
+          right: { kind: "ctx", no: r.newNo, text: r.text },
+        });
+      }
+    }
+    flush();
+    return rows;
+  }
+
+  return { parseHunkHeader, numberHunkLines, wordDiff, toSplitRows };
 });
