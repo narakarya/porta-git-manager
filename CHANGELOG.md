@@ -4,6 +4,21 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-05-30
+
+### Fixed
+- **Fullscreen modal actually fills the viewport now.** The 0.7.2 attempt left `.modal-root`'s 20px padding intact so the card stayed inset. Now toggles `position: fixed; inset: 0` on the card AND drops the parent's padding via `.modal-root-fullscreen`.
+- **Untracked directories no longer render as ghost rows in the Status tree.** `git status` reports untracked directories like `.claude/` (trailing slash); `gmFileTree` previously created a `.claude` dir node plus an empty-name file child — two visual rows for one logical entry. Trailing-slash paths now become single leaves at parent level with the slash preserved for display.
+- **Bigger, more visible chevron on per-file diff headers** (History detail + diff modal). Was 9px in a 9px slot — now 13px in an 18px slot with hover highlight. Padding on the header row bumped from 6px to 8px for a more clickable target.
+- **Branch facet chips sit flush below the filter row.** Previously had dangling padding (`2px 0 8px`) that left awkward dead space — now padded `8px 12px` with a `border-bottom` so the row feels like a deliberate toolbar.
+
+### Added
+- **Folder collapse / expand in the file tree.** Click any folder row to collapse its contents; chevron flips `▾`/`▸`. Works in the Status tab tree and the diff modal's tree pane. State lives in the DOM so a re-render resets to all-expanded.
+- **Wrap + Fullscreen toggles persist via localStorage** (`pgm.diff.wrap` / `pgm.diff.fullscreen`). User preference survives closing and re-opening the modal.
+
+### Changed
+- **Branch row: click anywhere on the row to open the diff** (matches the stash row UX from 0.7.0). The explicit "Diff" button is gone from both local and remote rows; "Switch" / "Delete" still pill-button. Current branch has no row click (nothing to diff against itself).
+
 ## [0.7.2] — 2026-05-30
 
 ### Changed
