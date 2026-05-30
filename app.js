@@ -179,7 +179,199 @@
         setTimeout(() => inp.focus(), 0);
       });
     },
+    /**
+     * Read-only diff viewer. `files` is the output of gmParseDiffDoc(raw).
+     * Used by the stash and branch "View"/"Diff" previews — rendering only,
+     * no stage/discard actions. Resolves when dismissed.
+     */
+    diffModal({ title, subtitle, files }) {
+      return new Promise((resolve) => {
+        const root = $("#modal-root");
+        root.hidden = false;
+        root.innerHTML = "";
+        const close = () => {
+          root.hidden = true;
+          root.innerHTML = "";
+          window.removeEventListener("keydown", onKey, true);
+          resolve();
+        };
+        const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+        window.addEventListener("keydown", onKey, true);
+
+        const content = h("div", { class: "diff-modal-content" });
+        const showList = (list) => { gmRenderDiffDoc(content, list); content.scrollTop = 0; };
+
+        let main;
+        if (files.length > 1) {
+          // VSCode-style: a file tree on the left, the selected file's diff on
+          // the right. "All files" shows the full multi-file diff.
+          const nav = h("div", { class: "diff-tree" });
+          let activeRow = null;
+          const setActive = (row) => {
+            if (activeRow) activeRow.classList.remove("is-active");
+            activeRow = row;
+            if (row) row.classList.add("is-active");
+          };
+          const totals = files.reduce((acc, f) => { const s = gmFileStats(f); acc.add += s.add; acc.del += s.del; return acc; }, { add: 0, del: 0 });
+          const allRow = h("button", { class: "diff-tree-row diff-tree-all is-active",
+            onClick: () => { setActive(allRow); showList(files); } },
+            h("span", { class: "diff-tree-name" }, files.length + " files changed"),
+            h("span", { class: "diff-tree-stat" },
+              h("span", { class: "stat-add" }, "+" + totals.add),
+              h("span", { class: "stat-del" }, "−" + totals.del)),
+          );
+          activeRow = allRow;
+          nav.append(allRow);
+          gmRenderTreeNav(nav, gmFileTree(files), 0, (f, row) => { setActive(row); showList([f]); });
+          main = h("div", { class: "diff-modal-main" }, nav, content);
+        } else {
+          main = h("div", { class: "diff-modal-main is-single" }, content);
+        }
+
+        const card = h("div", { class: "modal-card modal-wide" },
+          h("div", { class: "diff-modal-head" },
+            h("div", { class: "diff-modal-title" },
+              h("h3", null, title),
+              subtitle && h("p", { class: "diff-modal-sub", title: subtitle }, subtitle),
+            ),
+            h("button", { class: "btn-ghost", onClick: close }, "Close"),
+          ),
+          main,
+        );
+        root.appendChild(card);
+        showList(files);
+      });
+    },
   };
+
+  // ── Shared read-only diff rendering (stash / branch previews) ─────────────
+  // The Status tab has its own interactive renderer (with stage/discard
+  // buttons) trapped in its closure; these module-level helpers are a
+  // standalone, action-free variant that also handles multi-file diffs.
+  function gmDiffCodeHtml(body, lang, wordTokens) {
+    const esc = window.GMText.escapeHtml;
+    if (wordTokens) {
+      return wordTokens.map((w) =>
+        w.changed ? '<span class="' + wordTokens.cls + '">' + esc(w.t) + "</span>" : esc(w.t)
+      ).join("");
+    }
+    const toks = window.GMHi.tokenize(body, lang);
+    return toks.map((t) => t.type ? '<span class="syn-' + t.type + '">' + esc(t.t) + "</span>" : esc(t.t)).join("");
+  }
+
+  /** Split a (possibly multi-file) unified diff into files, each with hunks. */
+  function gmParseDiffDoc(text) {
+    const files = [];
+    let file = null, hunk = null;
+    const pushHunk = () => { if (file && hunk) { file.hunks.push(hunk); hunk = null; } };
+    const pushFile = () => { pushHunk(); if (file) files.push(file); file = null; };
+    for (const line of (text || "").split("\n")) {
+      if (line.startsWith("diff --git")) {
+        pushFile();
+        const m = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
+        file = { path: m ? m[2] : "", header: [line], hunks: [] };
+      } else if (line.startsWith("@@")) {
+        if (!file) file = { path: "", header: [], hunks: [] };
+        pushHunk();
+        hunk = { header: line, lines: [] };
+      } else if (hunk) {
+        hunk.lines.push(line);
+      } else if (file) {
+        file.header.push(line);
+      }
+    }
+    pushFile();
+    // Trim the trailing blank line git emits on each file's last hunk.
+    for (const f of files) {
+      const last = f.hunks[f.hunks.length - 1];
+      if (last) while (last.lines.length && last.lines[last.lines.length - 1] === "") last.lines.pop();
+    }
+    return files;
+  }
+
+  /** Render parsed files read-only (unified view) into `node`. */
+  function gmRenderDiffDoc(node, files) {
+    node.innerHTML = "";
+    if (!files || !files.length) {
+      node.append(h("div", { class: "status-diff-empty" }, "No changes to show."));
+      return;
+    }
+    for (const f of files) {
+      const lang = window.GMHi.langFromPath(f.path || "");
+      for (const m of f.header) {
+        const cls = (m.startsWith("diff ") || m.startsWith("+++") || m.startsWith("---")) ? "diff-file" : "diff-meta";
+        node.append(h("span", { class: "diff-line " + cls }, m || " "));
+      }
+      for (const hunk of f.hunks) {
+        const wrapper = h("div", { class: "hunk" });
+        wrapper.append(h("div", { class: "hunk-header" }, hunk.header));
+        const range = window.GMDiff.parseHunkHeader(hunk.header);
+        const rows = window.GMDiff.numberHunkLines(hunk.lines, range);
+        for (let k = 0; k < rows.length; k++) {
+          const r = rows[k], next = rows[k + 1];
+          if (r.kind === "del" && next && next.kind === "add") {
+            const d = window.GMDiff.wordDiff(r.text, next.text);
+            r._wd = d.del; r._wd.cls = "wd-del";
+            next._wd = d.add; next._wd.cls = "wd-add";
+          }
+        }
+        for (const r of rows) {
+          if (r.kind === "meta") { wrapper.append(h("span", { class: "diff-line diff-meta" }, r.text || " ")); continue; }
+          const lineBody = r.text.slice(1) || " ";
+          wrapper.append(h("span", { class: "diff-line diff-" + r.kind },
+            h("span", { class: "diff-gutter" }, r.oldNo == null ? "" : String(r.oldNo)),
+            h("span", { class: "diff-gutter" }, r.newNo == null ? "" : String(r.newNo)),
+            h("span", { class: "diff-code", html: gmDiffCodeHtml(lineBody, lang, r._wd || null) }),
+          ));
+        }
+        node.append(wrapper);
+      }
+    }
+  }
+
+  /** Added/removed line counts for one parsed file. */
+  function gmFileStats(f) {
+    let add = 0, del = 0;
+    for (const hk of f.hunks) for (const ln of hk.lines) {
+      if (ln[0] === "+") add++; else if (ln[0] === "-") del++;
+    }
+    return { add, del };
+  }
+
+  /** Nest parsed files into a {name, dirs:Map, files:[]} directory tree. */
+  function gmFileTree(files) {
+    const root = { name: "", dirs: new Map(), files: [] };
+    for (const f of files) {
+      const parts = (f.path || "?").split("/");
+      let node = root;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const seg = parts[i];
+        if (!node.dirs.has(seg)) node.dirs.set(seg, { name: seg, dirs: new Map(), files: [] });
+        node = node.dirs.get(seg);
+      }
+      node.files.push(Object.assign({ _name: parts[parts.length - 1] }, f));
+    }
+    return root;
+  }
+
+  /** Render a file tree into `nav`; `onPick(file, rowEl)` fires on file click. */
+  function gmRenderTreeNav(nav, node, depth, onPick) {
+    for (const dir of node.dirs.values()) {
+      nav.append(h("div", { class: "diff-tree-row diff-tree-dir", style: { paddingLeft: (depth * 12 + 10) + "px" }, title: dir.name }, dir.name + "/"));
+      gmRenderTreeNav(nav, dir, depth + 1, onPick);
+    }
+    for (const f of node.files) {
+      const st = gmFileStats(f);
+      const row = h("button", { class: "diff-tree-row diff-tree-file", style: { paddingLeft: (depth * 12 + 10) + "px" },
+        onClick: () => onPick(f, row) },
+        h("span", { class: "diff-tree-name", title: f.path }, f._name),
+        h("span", { class: "diff-tree-stat" },
+          st.add ? h("span", { class: "stat-add" }, "+" + st.add) : null,
+          st.del ? h("span", { class: "stat-del" }, "−" + st.del) : null),
+      );
+      nav.append(row);
+    }
+  }
 
   // ── Top-bar branch chip / badges ─────────────────────────────────────────
   function paintTopBar() {
@@ -276,6 +468,7 @@
     const pane = () => document.querySelector('.pane[data-pane="status"]');
     let lastDiffPath = null;
     let lastDiffSource = null;  // "staged" | "unstaged" | "untracked"
+    let caretPos = null;        // caret offset to restore after a filter re-render
 
     function parsePorcelain(text) {
       const staged = [], unstaged = [];
@@ -620,10 +813,27 @@
         danger: true, okLabel: "Discard",
       });
       if (!ok) return;
-      if (file.untracked) await git("clean -fd -- " + quote(file.path));
-      else {
-        const r = await git("restore -- " + quote(file.path));
-        if (r.code !== 0) await git("checkout -- " + quote(file.path));
+      if (file.untracked) {
+        let r = await git("clean -fd -- " + quote(file.path));
+        if (r.code !== 0) { ui.toast(r.stderr || "Discard failed", "error", 5000); await refresh(); return; }
+        // `git clean -fd` refuses to delete an untracked dir that's its own git
+        // repo: it prints "Skipping repository <path>" and exits 0, so a naive
+        // success toast lies. Detect it and force-remove with -ff behind a
+        // second, explicit confirm (this nukes the nested repo's history too).
+        if (/Skipping repository/i.test((r.stdout || "") + (r.stderr || ""))) {
+          const force = await ui.confirm({
+            title: "Folder contains a git repository",
+            body: `${file.path} has its own .git and was left untouched. Force-delete it and everything inside? This permanently removes the nested repository, including any uncommitted work in it.`,
+            danger: true, okLabel: "Force delete",
+          });
+          if (!force) { await refresh(); return; }
+          r = await git("clean -ffd -- " + quote(file.path));
+          if (r.code !== 0) { ui.toast(r.stderr || "Force delete failed", "error", 5000); await refresh(); return; }
+        }
+      } else {
+        let r = await git("restore -- " + quote(file.path));
+        if (r.code !== 0) r = await git("checkout -- " + quote(file.path));
+        if (r.code !== 0) { ui.toast(r.stderr || "Discard failed", "error", 5000); await refresh(); return; }
       }
       ui.toast("Discarded changes", "success");
       await refresh();
@@ -698,7 +908,7 @@
         class: "status-filter",
         placeholder: "Filter files…",
         value: state.fileFilter,
-        onInput: (e) => { state.fileFilter = e.target.value; render(); },
+        onInput: (e) => { caretPos = e.target.selectionStart; state.fileFilter = e.target.value; render(); },
       });
       const toolbar = h("div", { class: "status-toolbar" },
         filterInput,
@@ -719,6 +929,8 @@
         ),
       );
       node.append(toolbar);
+      // Restore the caret in the file filter after this render recreated it.
+      if (caretPos != null) { filterInput.focus(); try { filterInput.setSelectionRange(caretPos, caretPos); } catch (_) {} caretPos = null; }
 
       // ─── Split (file list ↔ diff) ────────────────────────────────────
       const diffNode = h("div", { class: "status-diff" });
@@ -806,6 +1018,7 @@
   const branchesTab = (() => {
     const pane = () => document.querySelector('.pane[data-pane="branches"]');
     let newBranchName = "";
+    const selected = new Set(); // branch names ticked for bulk delete
 
     async function loadBranches() {
       const sep = "\x1f";
@@ -830,10 +1043,13 @@
           merged: merged.has(name),
         };
       });
-      return {
-        local: all.filter((b) => !b.isRemote),
-        remote: all.filter((b) => b.isRemote && !b.name.endsWith("/HEAD")),
-      };
+      const localList = all.filter((b) => !b.isRemote);
+      const remoteList = all.filter((b) => b.isRemote && !b.name.endsWith("/HEAD"));
+      // Short names that exist on a remote (strip "remotes/<remote>/"), so we
+      // can flag which local branches are also published vs. local-only.
+      const remoteShort = new Set(remoteList.map((b) => b.name.split("/").slice(2).join("/")));
+      for (const b of localList) b.hasRemote = remoteShort.has(b.name);
+      return { local: localList, remote: remoteList };
     }
 
     async function checkout(b) {
@@ -887,6 +1103,87 @@
       } else ui.toast(r.stderr || "Delete failed", "error", 5000);
     }
 
+    // Parse a remotes/<remote>/<branch...> ref into its remote + branch parts.
+    function remoteParts(name) {
+      const parts = name.split("/"); // ["remotes", "<remote>", ...branch]
+      return { remote: parts[1], branch: parts.slice(2).join("/") };
+    }
+
+    async function deleteRemoteBranch(b) {
+      const { remote, branch } = remoteParts(b.name);
+      const ok = await ui.confirm({
+        title: "Delete remote branch?",
+        body: `Run \`git push --delete ${remote} ${branch}\`. This removes the branch on ${remote} — collaborators may still have it locally.`,
+        danger: true, okLabel: "Delete remote",
+      });
+      if (!ok) return;
+      const r = await sh("git push --delete " + quote(remote) + " " + quote(branch), { timeout: 60000 });
+      if (r.code === 0) { ui.toast("Removed " + branch + " from " + remote, "success"); await refresh(); }
+      else ui.toast(r.stderr || "Remote delete failed", "error", 5000);
+    }
+
+    // Bulk delete every ticked branch. Locals go through `branch -d` with a
+    // single follow-up force prompt for any that weren't fully merged; remotes
+    // go through `push --delete`. One confirm up front covers the whole set.
+    async function deleteSelected() {
+      const names = [...selected];
+      if (!names.length) return;
+      const locals = names.filter((n) => !n.startsWith("remotes/"));
+      const remotes = names.filter((n) => n.startsWith("remotes/"));
+      const lines = [];
+      if (locals.length) lines.push("Local: " + locals.join(", "));
+      if (remotes.length) lines.push("Remote: " + remotes.map((n) => { const p = remoteParts(n); return p.remote + "/" + p.branch; }).join(", "));
+      const ok = await ui.confirm({
+        title: `Delete ${names.length} branch${names.length > 1 ? "es" : ""}?`,
+        body: lines.join(" · ") + ". Unmerged local branches will ask before force-deleting.",
+        danger: true, okLabel: "Delete",
+      });
+      if (!ok) return;
+      const unmerged = [];
+      for (const n of locals) {
+        const r = await git("branch -d " + quote(n));
+        if (r.code !== 0) unmerged.push(n);
+      }
+      if (unmerged.length) {
+        const force = await ui.confirm({
+          title: "Force delete unmerged?",
+          body: `Not fully merged: ${unmerged.join(", ")}. Force-deleting drops their unmerged commits.`,
+          danger: true, okLabel: "Force delete",
+        });
+        if (force) for (const n of unmerged) await git("branch -D " + quote(n));
+      }
+      let remoteFail = 0;
+      for (const n of remotes) {
+        const { remote, branch } = remoteParts(n);
+        const r = await sh("git push --delete " + quote(remote) + " " + quote(branch), { timeout: 60000 });
+        if (r.code !== 0) remoteFail++;
+      }
+      selected.clear();
+      ui.toast(remoteFail ? `Done — ${remoteFail} remote delete(s) failed` : "Deleted selected branches", remoteFail ? "error" : "success");
+      await refresh();
+    }
+
+    // Read-only preview of what a branch carries relative to current HEAD:
+    // `HEAD...<branch>` (three-dot) diffs against the merge-base, so it shows
+    // only that branch's own changes, not commits unique to HEAD.
+    async function diffBranch(b) {
+      const r = await git("diff --no-color HEAD..." + quote(b.name));
+      if (r.code !== 0) { ui.toast(r.stderr || "Could not load branch diff", "error", 5000); return; }
+      const files = gmParseDiffDoc(r.stdout);
+      if (!files.length) {
+        ui.toast("No changes vs current branch (already merged or identical)", "info", 4000);
+        return;
+      }
+      const label = b.isRemote ? b.name.replace(/^remotes\//, "") : b.name;
+      await ui.diffModal({
+        title: "Changes on " + label,
+        subtitle: "git diff HEAD..." + label + " — relative to " + (state.branch || "HEAD"),
+        files,
+      });
+    }
+
+    // Load + initial paint. The search box lives here so it survives
+    // re-paints; only the list region under it is rebuilt on keystrokes.
     async function render() {
       const node = pane();
       node.innerHTML = "";
@@ -896,7 +1193,9 @@
         class: "history-search",
         placeholder: "Filter branches…",
         value: state.branchFilter,
-        onInput: (e) => { state.branchFilter = e.target.value; render(); },
+        // Re-paint only the list — rebuilding this input on each keystroke
+        // is what made the caret jump to the end.
+        onInput: (e) => { state.branchFilter = e.target.value; paint(); },
       });
       const newInput = h("input", {
         class: "input", style: { maxWidth: "240px" },
@@ -912,20 +1211,30 @@
         h("button", { class: "btn-primary", onClick: createBranch, disabled: !newBranchName.trim() }, "Create"),
       );
       node.append(top);
+      node.append(h("div", { class: "branches-list-wrap" }));
 
       const { local, remote } = await loadBranches();
       state.branches = { local, remote };
+      // Drop ticks for branches that no longer exist (e.g. after a delete).
+      const live = new Set([...local, ...remote].map((b) => b.name));
+      for (const n of [...selected]) if (!live.has(n)) selected.delete(n);
+      paint();
+    }
+
+    function paint() {
+      const wrap = pane() && pane().querySelector(".branches-list-wrap");
+      if (!wrap) return;
+      wrap.innerHTML = "";
+      const { local, remote } = state.branches || { local: [], remote: [] };
 
       const f = state.branchFilter.toLowerCase();
       const match = (b) => !f || b.name.toLowerCase().includes(f);
+      const hl = (s) => window.GMText.highlightMatches(s, f);
+      const toggle = (name, on) => { if (on) selected.add(name); else selected.delete(name); paint(); };
 
-      const list = h("div", { class: "branches-list" });
-
-      const hl = (s) => window.GMText.highlightMatches(s, state.branchFilter.toLowerCase());
-
-      // Tracking badge: ahead/behind/gone, derived from `%(upstream:track)`.
+      // Sync state badge (ahead/behind/gone), only meaningful with an upstream.
       function trackBadge(b) {
-        if (!b.upstream) return h("span", { class: "branch-tag is-local" }, "local-only");
+        if (!b.upstream) return null;
         const t = b.track || "";
         if (/gone/.test(t)) return h("span", { class: "branch-tag is-gone" }, "upstream gone");
         const ahead = (t.match(/ahead (\d+)/) || [])[1];
@@ -933,6 +1242,13 @@
         if (!ahead && !behind) return h("span", { class: "branch-tag is-synced" }, "up to date");
         return h("span", { class: "branch-tag is-diverged" },
           ahead ? "↑" + ahead : "", behind ? " ↓" + behind : "");
+      }
+
+      // Does this local branch also exist on a remote?
+      function remoteBadge(b) {
+        return b.hasRemote
+          ? h("span", { class: "branch-tag is-onremote" }, "on remote")
+          : h("span", { class: "branch-tag is-local" }, "local-only");
       }
 
       function mergeBadge(b) {
@@ -943,7 +1259,12 @@
       }
 
       function branchRow(b, opts) {
-        return h("div", { class: "branch-row" + (b.isCurrent ? " is-current" : "") },
+        const checkbox = opts.selectable
+          ? h("input", { type: "checkbox", class: "branch-check", checked: selected.has(b.name),
+              onChange: (e) => toggle(b.name, e.target.checked) })
+          : h("span", { class: "branch-check-spacer" });
+        return h("div", { class: "branch-row" + (b.isCurrent ? " is-current" : "") + (selected.has(b.name) ? " is-checked" : "") },
+          checkbox,
           h("span", { class: "branch-marker" }, b.isCurrent ? "●" : ""),
           h("div", { class: "branch-main" },
             h("div", { class: "branch-line" },
@@ -960,13 +1281,27 @@
         );
       }
 
+      // Bulk-action bar appears only while something is ticked.
+      if (selected.size > 0) {
+        wrap.append(h("div", { class: "bulk-bar" },
+          h("span", { class: "bulk-count" }, selected.size + " selected"),
+          h("div", { style: { flex: "1" } }),
+          h("button", { class: "btn-mini", onClick: () => { selected.clear(); paint(); } }, "Clear"),
+          h("button", { class: "btn-mini danger", onClick: deleteSelected }, "Delete selected"),
+        ));
+      }
+
+      const list = h("div", { class: "branches-list" });
+
       const filteredLocal = local.filter(match);
       list.append(h("div", { class: "branch-section-title" }, "Local", h("span", { class: "count" }, String(filteredLocal.length))));
       if (filteredLocal.length === 0) list.append(h("div", { class: "empty-files" }, "No matching local branches"));
       for (const b of filteredLocal) {
         list.append(branchRow(b, {
-          tags: h("span", { class: "branch-tags" }, mergeBadge(b), trackBadge(b)),
+          selectable: !b.isCurrent,
+          tags: h("span", { class: "branch-tags" }, mergeBadge(b), remoteBadge(b), trackBadge(b)),
           actions: [
+            !b.isCurrent && h("button", { class: "btn-mini", onClick: () => diffBranch(b) }, "Diff"),
             !b.isCurrent && h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Switch"),
             !b.isCurrent && h("button", { class: "btn-mini danger", onClick: () => deleteBranch(b.name) }, "Delete"),
           ].filter(Boolean),
@@ -978,8 +1313,13 @@
         list.append(h("div", { class: "branch-section-title" }, "Remote", h("span", { class: "count" }, String(filteredRemote.length))));
         for (const b of filteredRemote) {
           list.append(branchRow(b, {
+            selectable: true,
             tags: null,
-            actions: [h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Check out")],
+            actions: [
+              h("button", { class: "btn-mini", onClick: () => diffBranch(b) }, "Diff"),
+              h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Check out"),
+              h("button", { class: "btn-mini danger", onClick: () => deleteRemoteBranch(b) }, "Delete remote"),
+            ],
           }));
         }
       }
@@ -988,7 +1328,7 @@
         list.append(h("div", { class: "empty-files" }, "No branches match “" + state.branchFilter + "”."));
       }
 
-      node.append(list);
+      wrap.append(list);
     }
 
     return { render };
@@ -1196,6 +1536,7 @@
   // ── History tab ──────────────────────────────────────────────────────────
   const historyTab = (() => {
     const pane = () => document.querySelector('.pane[data-pane="history"]');
+    let caretPos = null; // caret offset to restore after a search re-render
 
     async function loadLog(filter) {
       const sep = "\x1f";
@@ -1241,9 +1582,12 @@
         class: "history-search",
         placeholder: "Filter commits by message…",
         value: state.historyFilter,
-        onInput: (e) => { state.historyFilter = e.target.value; clearTimeout(searchTimer); searchTimer = setTimeout(render, 250); },
+        onInput: (e) => { caretPos = e.target.selectionStart; state.historyFilter = e.target.value; clearTimeout(searchTimer); searchTimer = setTimeout(render, 250); },
       });
       node.append(h("div", { class: "history-top" }, search));
+      // The re-render above recreates this input; put the caret back where the
+      // user was typing instead of letting it snap to the end.
+      if (caretPos != null) { search.focus(); try { search.setSelectionRange(caretPos, caretPos); } catch (_) {} caretPos = null; }
 
       const list = h("div", { class: "history-list" });
       const detail = h("div", { class: "history-detail" });
@@ -1434,6 +1778,7 @@
     const pane = () => document.querySelector('.pane[data-pane="stash"]');
     let msg = "";
     let includeUntracked = false;
+    const selectedRefs = new Set(); // stash refs ticked for bulk drop
 
     async function loadStash() {
       const sep = "\x1f";
@@ -1482,6 +1827,43 @@
       else ui.toast(r.stderr || "Drop failed", "error", 5000);
       await refresh();
     }
+    async function show(s) {
+      // `stash show -p` emits the tracked diff of the stash without touching
+      // the working tree — exactly what we want for a read-only preview.
+      const r = await git("stash show -p --no-color " + quote(s.ref));
+      if (r.code !== 0) { ui.toast(r.stderr || "Could not load stash diff", "error", 5000); return; }
+      const files = gmParseDiffDoc(r.stdout);
+      if (!files.length) { ui.toast("Stash has no tracked changes to preview", "info"); return; }
+      await ui.diffModal({
+        title: s.ref + (s.branch ? " · on " + s.branch : ""),
+        subtitle: s.desc || null,
+        files,
+      });
+    }
+
+    // Drop every ticked stash. Refs are positional (stash@{0}, stash@{1}…) and
+    // reindex after each drop, so we drop highest-index-first to keep the
+    // remaining refs valid mid-loop.
+    async function dropSelected() {
+      const refs = [...selectedRefs];
+      if (!refs.length) return;
+      const ok = await ui.confirm({
+        title: `Drop ${refs.length} stash${refs.length > 1 ? "es" : ""}?`,
+        body: `Permanently drop ${refs.join(", ")}. This can't be undone.`,
+        danger: true, okLabel: "Drop",
+      });
+      if (!ok) return;
+      const idx = (ref) => { const m = /stash@\{(\d+)\}/.exec(ref); return m ? Number(m[1]) : 0; };
+      refs.sort((a, b) => idx(b) - idx(a));
+      let fail = 0;
+      for (const ref of refs) {
+        const r = await git("stash drop " + quote(ref));
+        if (r.code !== 0) fail++;
+      }
+      selectedRefs.clear();
+      ui.toast(fail ? `Done — ${fail} drop(s) failed` : "Dropped selected stashes", fail ? "error" : "success");
+      await refresh();
+    }
 
     async function render() {
       const node = pane();
@@ -1502,17 +1884,42 @@
         h("button", { class: "btn-primary", onClick: save }, "Stash"),
       ));
 
+      node.append(h("div", { class: "stash-list-wrap" }));
+
       const stashes = await loadStash();
       state.stashes = stashes;
       state.stashCount = stashes.length;
+      // Drop ticks for stashes that no longer exist.
+      const live = new Set(stashes.map((s) => s.ref));
+      for (const ref of [...selectedRefs]) if (!live.has(ref)) selectedRefs.delete(ref);
       paintTopBar();
+      paint();
+    }
+
+    function paint() {
+      const wrap = pane() && pane().querySelector(".stash-list-wrap");
+      if (!wrap) return;
+      wrap.innerHTML = "";
+      const stashes = state.stashes || [];
+      const toggle = (ref, on) => { if (on) selectedRefs.add(ref); else selectedRefs.delete(ref); paint(); };
+
+      if (selectedRefs.size > 0) {
+        wrap.append(h("div", { class: "bulk-bar" },
+          h("span", { class: "bulk-count" }, selectedRefs.size + " selected"),
+          h("div", { style: { flex: "1" } }),
+          h("button", { class: "btn-mini", onClick: () => { selectedRefs.clear(); paint(); } }, "Clear"),
+          h("button", { class: "btn-mini danger", onClick: dropSelected }, "Drop selected"),
+        ));
+      }
 
       const list = h("div", { class: "stash-list" });
       if (stashes.length === 0) {
         list.append(h("div", { class: "empty-files" }, "No stashes"));
       } else {
         for (const s of stashes) {
-          list.append(h("div", { class: "stash-row" },
+          list.append(h("div", { class: "stash-row" + (selectedRefs.has(s.ref) ? " is-checked" : "") },
+            h("input", { type: "checkbox", class: "stash-check", checked: selectedRefs.has(s.ref),
+              onChange: (e) => toggle(s.ref, e.target.checked) }),
             h("span", { class: "stash-idx" }, s.ref),
             h("div", { class: "stash-main" },
               h("div", { class: "stash-line" },
@@ -1524,6 +1931,7 @@
               ),
             ),
             h("span", { class: "stash-actions" },
+              h("button", { class: "btn-mini", onClick: () => show(s) }, "View"),
               h("button", { class: "btn-mini", onClick: () => apply(s.ref) }, "Apply"),
               h("button", { class: "btn-mini", onClick: () => pop(s.ref) }, "Pop"),
               h("button", { class: "btn-mini danger", onClick: () => drop(s.ref) }, "Drop"),
@@ -1531,7 +1939,7 @@
           ));
         }
       }
-      node.append(list);
+      wrap.append(list);
     }
 
     return { render };
@@ -1544,6 +1952,7 @@
     let newMsg = "";
     let annotated = true;
     let filter = "";
+    let caretPos = null; // caret offset to restore after a filter re-render
 
     async function loadTags() {
       const sep = "\x1f";
@@ -1632,7 +2041,7 @@
         class: "history-search", style: { maxWidth: "180px" },
         placeholder: "Filter…",
         value: filter,
-        onInput: (e) => { filter = e.target.value; render(); },
+        onInput: (e) => { caretPos = e.target.selectionStart; filter = e.target.value; render(); },
       });
 
       node.append(h("div", { class: "tags-top" },
@@ -1643,6 +2052,8 @@
         h("div", { style: { flex: "1" } }),
         filterInput,
       ));
+      // Keep the caret where the user was typing across the filter re-render.
+      if (caretPos != null) { filterInput.focus(); try { filterInput.setSelectionRange(caretPos, caretPos); } catch (_) {} caretPos = null; }
 
       const tags = await loadTags();
       const f = filter.toLowerCase();

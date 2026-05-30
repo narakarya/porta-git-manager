@@ -671,7 +671,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 }
 .branch-row {
   display: grid;
-  grid-template-columns: 16px 1fr auto;
+  grid-template-columns: 16px 16px 1fr auto;
   align-items: center;
   gap: 10px;
   padding: 9px 14px;
@@ -926,7 +926,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 .stash-list { flex: 1; overflow-y: auto; padding: 4px 0; }
 .stash-row {
   display: grid;
-  grid-template-columns: 72px 1fr auto;
+  grid-template-columns: 16px 72px 1fr auto;
   gap: 14px;
   align-items: center;
   padding: 9px 14px;
@@ -1093,6 +1093,94 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
   from { opacity: 0; transform: scale(0.96); }
   to   { opacity: 1; transform: scale(1); }
 }
+
+/* Wide read-only diff viewer (stash "View" / branch "Diff"). */
+.modal-card.modal-wide {
+  max-width: min(960px, 92vw);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  max-height: 86vh;
+  padding: 0;
+  overflow: hidden;
+}
+.diff-modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.diff-modal-title { min-width: 0; flex: 1; }
+.diff-modal-head h3 { margin: 0; }
+.diff-modal-sub {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.diff-modal-head .btn-ghost { flex: none; }
+.diff-modal-main {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+.diff-modal-content {
+  overflow: auto;
+  padding: 6px 0 10px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+}
+/* VSCode-style file tree sidebar in the diff viewer. */
+.diff-tree {
+  flex: none;
+  width: 240px;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  padding: 6px 0;
+}
+.diff-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-mute);
+}
+.diff-tree-dir { color: var(--text-dim); font-size: 11px; cursor: default; }
+.diff-tree-file { cursor: pointer; }
+.diff-tree-file:hover { background: var(--bg-hover); color: var(--text); }
+.diff-tree-row.is-active { background: rgba(96, 165, 250, 0.14); color: var(--text); }
+.diff-tree-all { font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.diff-tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-tree-stat { flex: none; display: flex; gap: 6px; font-variant-numeric: tabular-nums; }
+.diff-tree-stat .stat-add { color: var(--emerald); }
+.diff-tree-stat .stat-del { color: var(--red); }
+
+/* Multi-select bulk-action bar (branches & stash). */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 0 0 6px;
+  background: rgba(96, 165, 250, 0.10);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-md, 6px);
+}
+.bulk-count { font-size: 12px; color: var(--text); }
+.branch-check, .stash-check { flex: none; margin: 0 2px 0 0; cursor: pointer; }
+.branch-check-spacer { display: inline-block; width: 13px; flex: none; }
+.branch-row.is-checked, .stash-row.is-checked { background: rgba(96, 165, 250, 0.08); }
+.branch-tag.is-onremote { color: var(--emerald); }
 
 .sync-action .name svg { width:13px; height:13px; opacity:.9; }
 .sync-action:focus-visible { border-color:var(--blue); }

@@ -8,12 +8,47 @@ pure HTML + JS + CSS that talks to Porta via `window.portaBridge`.
 | Tab | What |
 |-----|------|
 | **Status** | Split view with diff preview, **per-hunk Stage / Unstage / Discard** (hover the hunk header), file-level stage / unstage / discard, commit + amend (⌘↵), **Unified ↔ Split diff toggle** *(new in 0.4.0)*. Untracked files **and directories** now preview their contents instead of showing "(no diff)" *(fixed in 0.6.0)*. |
-| **Branches** | Local + remote, filter input, current marker, ahead/behind tracking, create + switch + (force-)delete. **Merged / unmerged badges**, tracking badges, and last-commit info per row *(new in 0.6.0)*. |
+| **Branches** | Local + remote, filter input, current marker, ahead/behind tracking, create + switch + (force-)delete. **Merged / unmerged badges**, tracking badges, and last-commit info per row *(new in 0.6.0)*. **Diff preview, on-remote / local-only badge, remote-branch delete, and checkbox multi-select bulk delete** *(new in 0.6.2)*. |
 | **Sync** | Card grid: Fetch, Fetch + prune, Pull, Pull --rebase, Push, Push --force-with-lease. Per-card running state. **Remote management** *(new in 0.4.0)*: list / add / rename / edit-URL / remove. **Top-bar quick Pull / Push** *(new in 0.6.0)*. |
 | **History** | Split view: last 100 commits with message search; click to see header + colored diff. |
 | **Rebase** | Pick a target ref, choose pick/squash/fixup/drop per commit, reorder with ↑↓, abort/continue when paused. |
-| **Stash** | List, save (with message + include-untracked toggle), apply, pop, drop. Rows show the **branch chip + relative time**, parsed from the stash message *(new in 0.6.0)*. |
+| **Stash** | List, save (with message + include-untracked toggle), apply, pop, drop. Rows show the **branch chip + relative time**, parsed from the stash message *(new in 0.6.0)*. **View changes (tree-style diff viewer) and checkbox multi-select bulk drop** *(new in 0.6.2)*. |
 | **Tags** *(new in 0.3.0)* | Create lightweight or annotated tags, push to origin, delete locally, delete on origin. Filter input for finding among many. |
+
+## Review & multi-select (0.6.2)
+
+- **Stash "View"** opens a read-only diff of the stash (`git stash show -p`) in a
+  **VSCode-style viewer** — a file tree on the left, the selected file's diff on
+  the right, "All files" shows everything. Multi-file diffs (also used by the
+  branch Diff below) get the tree; single-file diffs render inline.
+- **Branch "Diff"** previews what a branch carries relative to the current HEAD
+  (`git diff HEAD...<branch>`, three-dot so it's only that branch's own work),
+  for both local and remote branches.
+- **On-remote vs local-only badge** on each local branch, computed by matching
+  short names against the remote refs — so you can see which locals are
+  published. Sync (ahead/behind) badges now only show when an upstream is set.
+- **Remote branch delete** (`git push --delete <remote> <branch>`) from the
+  remote-branch rows, with a destructive confirm.
+- **Checkbox multi-select** on branch and stash rows with a bulk-action bar.
+  Bulk branch delete splits local (`branch -d`, one force prompt for any
+  unmerged) from remote (`push --delete`); bulk stash drop removes
+  highest-index-first so the positional refs stay valid mid-loop. Every
+  destructive bulk action confirms up front.
+- **Filter caret fix.** The Status, Branches, History, and Tags filter inputs no
+  longer bounce the caret to the end on each keystroke — the branch list
+  re-paints without rebuilding the input; the others restore the caret position
+  after their re-render.
+
+## Discard fixes (0.6.1)
+
+- **Discarding a folder that's its own git repo now works.** `git clean -fd`
+  silently *skips* a nested repository (prints `Skipping repository <path>`,
+  exits 0), so discarding an untracked folder containing its own `.git` looked
+  like it succeeded but deleted nothing. Discard now detects the skip and offers
+  a second, explicit confirm to force-remove with `git clean -ffd`.
+- **Discard no longer fakes success.** Both the untracked (`clean`) and tracked
+  (`restore` / `checkout`) paths now check the command result and surface a real
+  error toast instead of always reporting "Discarded changes".
 
 ## UI/UX overhaul + fixes (0.6.0)
 
