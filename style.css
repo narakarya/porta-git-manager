@@ -1494,3 +1494,28 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 }
 .commit-stat-strip .stat-bar-add { background: rgba(52, 211, 153, 0.7); height: 100%; }
 .commit-stat-strip .stat-bar-del { background: rgba(248, 113, 113, 0.7); height: 100%; }
+
+@keyframes skel-shimmer {
+  0%   { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+.skel {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.04) 0%,
+    rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0.04) 100%);
+  background-size: 200px 100%;
+  background-repeat: no-repeat;
+  animation: skel-shimmer 1.2s linear infinite;
+  border-radius: 4px;
+}
+.skel-line { height: 12px; margin: 6px 0; }
+.skel-subject { width: 50%; height: 16px; }
+.skel-body    { width: 80%; }
+.skel-meta    { width: 35%; }
+.skel-pill    { width: 70px; height: 16px; border-radius: 4px; }
+.skel-strip-text { width: 30%; }
+.skel-bar     { width: 200px; height: 8px; margin-left: auto; }
+.skel-diff-line { height: 12px; margin: 2px 0; width: 92%; }
+.skel-card .sep { opacity: 0.3; }
+.skel-strip { background: var(--bg); }

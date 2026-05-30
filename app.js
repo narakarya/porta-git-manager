@@ -1824,22 +1824,45 @@
     async function renderDetail(detailNode, commit) {
       detailNode.innerHTML = "";
 
-      // Card: subject + (optional) body + separator + meta + sha pills.
+      // Skeleton — structure matches the real layout so the swap doesn't jump.
+      detailNode.append(h("div", { class: "commit-card skel-card" },
+        h("div", { class: "skel skel-line skel-subject" }),
+        h("div", { class: "skel skel-line skel-body" }),
+        h("div", { class: "sep" }),
+        h("div", { class: "skel skel-line skel-meta" }),
+        h("div", { class: "pill-row" },
+          h("div", { class: "skel skel-pill" }),
+          h("div", { class: "skel skel-pill" }),
+        ),
+      ));
+      detailNode.append(h("div", { class: "commit-stat-strip skel-strip" },
+        h("div", { class: "skel skel-line skel-strip-text" }),
+        h("div", { class: "skel skel-bar" }),
+      ));
+      for (let i = 0; i < 5; i++) {
+        detailNode.append(h("div", { class: "skel skel-diff-line" }));
+      }
+
+      // Parallel fetches — body, absolute timestamp, and the patch itself.
+      const [bodyRes, absRes, showRes] = await Promise.all([
+        git("show -s --format=%b " + quote(commit.sha)),
+        git("show -s --format=%ai " + quote(commit.sha)),
+        git("show --no-color --format= -p " + quote(commit.sha)),
+      ]);
+
+      // Swap to real DOM in one atomic clear-and-build.
+      detailNode.innerHTML = "";
+
+      // ── Card ─────────────────────────────────────────────────────────
       const subject = h("div", { class: "subject" }, commit.msg);
       const card = h("div", { class: "commit-card" }, subject);
 
-      // Body — fetched separately because multi-line %b can't ride through
-      // the log-format's NUL/sep parsing reliably.
-      const bodyRes = await git("show -s --format=%b " + quote(commit.sha));
       const bodyText = (bodyRes.code === 0 ? bodyRes.stdout : "").trimEnd();
       if (bodyText) card.append(h("div", { class: "body" }, bodyText));
 
       card.append(h("div", { class: "sep" }));
 
-      // Absolute timestamp goes in the meta line's title tooltip.
-      const absRes = await git("show -s --format=%ai " + quote(commit.sha));
       const absDate = (absRes.code === 0 ? absRes.stdout : "").trim();
-
       card.append(h("div", { class: "meta" },
         h("span", null, commit.author),
         h("span", null, "·"),
@@ -1867,14 +1890,8 @@
 
       detailNode.append(card);
 
-      const diffWrap = h("div", { class: "commit-diff" });
-      detailNode.append(diffWrap);
-      diffWrap.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
-      // `--format=` strips the commit header so we don't double-render it
-      // under the card we just built. `-p` gives the patch; stats are
-      // derived from the parsed files (used by D3 / Task 17).
-      const r = await git("show --no-color --format= -p " + quote(commit.sha));
-      const files = gmParseDiffDoc(r.stdout);
+      // ── Diff + stat strip ────────────────────────────────────────────
+      const files = gmParseDiffDoc(showRes.stdout);
       lastFiles = files;
 
       const totals = files.reduce((acc, f) => {
@@ -1882,7 +1899,7 @@
       }, { add: 0, del: 0 });
       const total = totals.add + totals.del || 1;
       const addPct = (totals.add / total) * 100;
-      const strip = h("div", { class: "commit-stat-strip" },
+      detailNode.append(h("div", { class: "commit-stat-strip" },
         h("span", { class: "stat-files" }, files.length + " file" + (files.length === 1 ? "" : "s") + " changed"),
         h("span", { class: "stat-sep" }, "·"),
         h("span", { class: "stat-add" }, "+" + totals.add),
@@ -1892,10 +1909,10 @@
           h("span", { class: "stat-bar-add", style: { width: addPct + "%" } }),
           h("span", { class: "stat-bar-del", style: { width: (100 - addPct) + "%" } }),
         ),
-      );
-      // Insert strip BEFORE the diff so it visually delimits header card → diff.
-      detailNode.insertBefore(strip, diffWrap);
+      ));
 
+      const diffWrap = h("div", { class: "commit-diff" });
+      detailNode.append(diffWrap);
       gmRenderDiffDoc(diffWrap, files);
     }
 
