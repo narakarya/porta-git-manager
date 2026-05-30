@@ -1138,26 +1138,48 @@
       return normalizeRepoPath(clean.startsWith("/") ? clean : pathDirname(baseFile) + clean);
     }
 
-    async function imageBlobUrlForPath(path) {
+    async function imageDataUrlForPath(path) {
       const mime = imageMime(path);
       if (!mime) return null;
       const r = await sh("base64 -i " + quote(path));
       if (r.code !== 0 || !r.stdout) return null;
-      return imagePreviewUrl({ mime, base64: r.stdout.replace(/\s+/g, "") });
+      return "data:" + mime + ";base64," + r.stdout.replace(/\s+/g, "");
     }
 
     async function inlineHtmlPreviewImages(html, baseFile) {
-      const re = /\bsrc\s*=\s*(["'])([^"']+)\1/gi;
+      const attrRe = /\b(src|srcset)\s*=\s*(?:(["'])(.*?)\2|([^\s>]+))/gi;
       let out = "", last = 0, match;
-      while ((match = re.exec(html))) {
-        const raw = match[2];
-        const asset = resolvePreviewAsset(baseFile, raw);
-        const blobUrl = asset ? await imageBlobUrlForPath(asset) : null;
+      while ((match = attrRe.exec(html))) {
+        const attr = match[1].toLowerCase();
+        const raw = match[3] != null ? match[3] : match[4];
+        const replacement = attr === "srcset"
+          ? await inlineHtmlSrcset(raw, baseFile)
+          : await inlineHtmlSrc(raw, baseFile);
         out += html.slice(last, match.index);
-        out += blobUrl ? 'src="' + blobUrl + '"' : match[0];
+        out += replacement ? attr + '="' + replacement + '"' : match[0];
         last = match.index + match[0].length;
       }
       return out + html.slice(last);
+    }
+
+    async function inlineHtmlSrc(raw, baseFile) {
+      const asset = resolvePreviewAsset(baseFile, raw);
+      return asset ? await imageDataUrlForPath(asset) : null;
+    }
+
+    async function inlineHtmlSrcset(raw, baseFile) {
+      const parts = String(raw || "").split(",").map((part) => part.trim()).filter(Boolean);
+      if (!parts.length) return null;
+      const out = [];
+      let changed = false;
+      for (const part of parts) {
+        const bits = part.split(/\s+/);
+        const url = bits.shift();
+        const dataUrl = await inlineHtmlSrc(url, baseFile);
+        if (dataUrl) changed = true;
+        out.push([dataUrl || url, ...bits].join(" "));
+      }
+      return changed ? out.join(", ") : null;
     }
 
     /**

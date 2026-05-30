@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.28] — 2026-05-30
+
+### Fixed
+- **HTML preview images are embedded as data URLs.** Local `src` and `srcset` image assets are now inlined directly into the sandboxed iframe so previews render even when Blob URLs are blocked.
+
 ## [0.7.27] — 2026-05-30
 
 ### Fixed
