@@ -331,7 +331,7 @@
         };
         const lsSet = (k, v) => { try { window.localStorage.setItem(k, String(v)); } catch (_) {} };
 
-        let wrap = lsGet("pgm.diff.wrap", false);
+        let wrap = lsGet("pgm.diff.wrap", true);   // default ON — long lines wrap by default
         const wrapChk = h("input", {
           type: "checkbox",
           checked: wrap,
@@ -2109,7 +2109,23 @@
         ui.toast("First commit cannot be 'squash' — change to 'pick'", "error", 4000);
         return;
       }
-      const todo = state.rebasePlan.filter((c) => c.op !== "drop").map((c) => `${c.op} ${c.sha} ${c.msg}`).join("\n");
+      // Build todo: drop -> skipped; reword -> pick + exec amend with the
+      // user-provided message. Other ops -> emitted as-is.
+      const lines = [];
+      for (const c of state.rebasePlan) {
+        if (c.op === "drop") continue;
+        if (c.op === "reword") {
+          if (!c.newMsg || !c.newMsg.trim()) {
+            ui.toast(`Commit ${c.sha} is marked reword but has no new message. Re-select to enter one.`, "error", 5000);
+            return;
+          }
+          lines.push(`pick ${c.sha} ${c.msg}`);
+          lines.push(`exec git commit --amend -m ${quote(c.newMsg.trim())}`);
+        } else {
+          lines.push(`${c.op} ${c.sha} ${c.msg}`);
+        }
+      }
+      const todo = lines.join("\n");
       const tmp = "/tmp/porta-rebase-todo-" + Date.now();
       const write = await sh("cat > " + quote(tmp) + " <<'PORTA_EOF'\n" + todo + "\nPORTA_EOF");
       if (write.code !== 0) { ui.toast("Could not write todo", "error"); return; }
@@ -2196,23 +2212,48 @@
       const plan = h("div", { class: "rebase-plan" });
       for (let i = 0; i < state.rebasePlan.length; i++) {
         const c = state.rebasePlan[i];
+        const prevOp = c.op;
         const sel = h("select", {
           class: "input rebase-op",
-          onChange: (e) => { c.op = e.target.value; render(); },
+          onChange: async (e) => {
+            const newOp = e.target.value;
+            if (newOp === "reword") {
+              const msg = await ui.input({
+                title: "Reword commit " + c.sha,
+                body: "Replaces the commit message during rebase. Original stays in the planning view above for reference.",
+                placeholder: "New commit message",
+                initial: c.newMsg || c.msg,
+                okLabel: "Set message",
+              });
+              if (msg == null) {
+                // Cancelled — revert select to previous op without re-render.
+                e.target.value = prevOp;
+                return;
+              }
+              c.newMsg = msg;
+            }
+            c.op = newOp;
+            render();
+          },
         });
-        for (const op of ["pick", "squash", "fixup", "drop"]) {
+        for (const op of ["pick", "reword", "squash", "fixup", "drop"]) {
           sel.append(h("option", { value: op, selected: c.op === op }, op));
         }
         const grip = h("span", { class: "grip", title: "Move up/down" },
           h("button", { class: "row-action", onClick: () => move(i, -1), disabled: i === 0 }, "↑"),
           h("button", { class: "row-action", onClick: () => move(i, +1), disabled: i === state.rebasePlan.length - 1 }, "↓"),
         );
-        plan.append(h("div", { class: "rebase-todo-row" + (c.op === "drop" ? " is-drop" : ""), dataset: { op: c.op } },
+        const msgCell = h("span", { class: "log-msg-line", title: c.msg }, c.msg);
+        const row = h("div", { class: "rebase-todo-row" + (c.op === "drop" ? " is-drop" : ""), dataset: { op: c.op } },
           grip,
           sel,
           h("span", { class: "log-sha" }, c.sha),
-          h("span", { class: "log-msg-line", title: c.msg }, c.msg),
-        ));
+          msgCell,
+        );
+        if (c.op === "reword" && c.newMsg) {
+          msgCell.append(h("span", { class: "reword-preview" }, "→ " + c.newMsg));
+        }
+        plan.append(row);
       }
       node.append(plan);
 

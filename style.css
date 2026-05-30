@@ -529,9 +529,12 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 /* Fullscreen modal — break out of .modal-root's flex centering + 20px
    padding by positioning the card directly against the viewport. The
    parent also drops its padding via .modal-root-fullscreen so nothing
-   constrains the card. Reverts cleanly when class is removed. */
+   constrains the card. Reverts cleanly when class is removed.
+   Selector is `.modal-card.modal-wide.is-fullscreen` (3 classes) so it
+   beats `.modal-card.modal-wide` (line 1179 — `max-width: 92vw`,
+   `max-height: 86vh`) which kept clamping the card pre-0.7.4. */
 .modal-root-fullscreen { padding: 0; }
-.modal-card.is-fullscreen {
+.modal-card.modal-wide.is-fullscreen {
   position: fixed;
   inset: 0;
   width: auto; height: auto;
@@ -543,8 +546,8 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
   display: flex;
   flex-direction: column;
 }
-.modal-card.is-fullscreen .diff-modal-head { padding: 10px 14px; }
-.modal-card.is-fullscreen .diff-modal-main { flex: 1; min-height: 0; }
+.modal-card.modal-wide.is-fullscreen .diff-modal-head { padding: 10px 14px; }
+.modal-card.modal-wide.is-fullscreen .diff-modal-main { flex: 1; min-height: 0; }
 .diff-modal-fs { min-width: 60px; }
 
 /* File tree — folder rows are clickable + collapsible. The chevron flips
@@ -901,7 +904,12 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 }
 
 /* ─── Rebase pane ────────────────────────────────────────────────────────── */
+/* flex-shrink:0 on each section so the inner .rebase-plan keeps its natural
+   height; without it, the pane's flex column shrinks rows to fit and the
+   plan's overflow:hidden then clips the middle rows (the visible bug was
+   rows 1–5 + row 10 with a gap, instead of all 10 scrolling). */
 .rebase-pane { padding: 16px; overflow-y: auto; }
+.rebase-pane > * { flex-shrink: 0; }
 .rebase-form {
   display: flex;
   gap: 8px;
@@ -948,9 +956,17 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
   border-left: 2px solid transparent;
 }
 .rebase-todo-row[data-op="pick"]   { border-left-color: rgba(52,211,153,.45); }
+.rebase-todo-row[data-op="reword"] { border-left-color: var(--blue); }
 .rebase-todo-row[data-op="squash"],
 .rebase-todo-row[data-op="fixup"]  { border-left-color: var(--amber); }
 .rebase-todo-row[data-op="drop"]   { border-left-color: var(--red); }
+.rebase-todo-row .reword-preview {
+  color: var(--blue);
+  font-style: italic;
+  font-size: 10.5px;
+  display: block;
+  margin-top: 2px;
+}
 .rebase-todo-row + .rebase-todo-row { border-top: 1px solid var(--border); }
 .rebase-todo-row:hover { background: var(--bg-hover); }
 .rebase-todo-row .grip {
