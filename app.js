@@ -338,21 +338,10 @@
     return { add, del };
   }
 
-  /** Nest parsed files into a {name, dirs:Map, files:[]} directory tree. */
-  function gmFileTree(files) {
-    const root = { name: "", dirs: new Map(), files: [] };
-    for (const f of files) {
-      const parts = (f.path || "?").split("/");
-      let node = root;
-      for (let i = 0; i < parts.length - 1; i++) {
-        const seg = parts[i];
-        if (!node.dirs.has(seg)) node.dirs.set(seg, { name: seg, dirs: new Map(), files: [] });
-        node = node.dirs.get(seg);
-      }
-      node.files.push(Object.assign({ _name: parts[parts.length - 1] }, f));
-    }
-    return root;
-  }
+  // Data layer lives in file-tree.js (window.GMTree); these are local
+  // aliases so callers don't have to know.
+  const gmFileTree = window.GMTree.fileTree;
+  const gmFilterFiles = window.GMTree.filterFiles;
 
   /** Render a file tree into `nav`; `onPick(file, rowEl)` fires on file click. */
   function gmRenderTreeNav(nav, node, depth, onPick) {
