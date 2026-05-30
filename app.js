@@ -664,6 +664,7 @@
    *   renderRow(file, depth): Node,    // builds and returns the file row inner content;
    *                                    // MUST NOT attach its own click handler
    *                                    // (we attach onPick to the wrapper button)
+   *   renderDirLead(dir, files, depth): Node, // optional node before the chevron
    *   keyFor(file): string,            // optional stable row key for selection
    * }
    */
@@ -671,7 +672,14 @@
     const node = gmFileTree(files);
     const onPick = opts.onPick || (() => {});
     const renderRow = opts.renderRow || defaultDiffRow;
+    const renderDirLead = opts.renderDirLead || null;
     walk(nav, node, opts.depth || 0);
+
+    function collectFiles(n) {
+      let out = n.files.slice();
+      for (const child of n.dirs.values()) out = out.concat(collectFiles(child));
+      return out;
+    }
 
     function walk(parent, n, depth) {
       for (const dir of n.dirs.values()) {
@@ -680,11 +688,14 @@
         // in the DOM — caller doesn't need to track anything; if the
         // caller fully re-renders the tree, folders reset to expanded.
         const chev = h("span", { class: "tree-chev" }, "▾");
+        const dirFiles = collectFiles(dir);
+        const lead = renderDirLead ? renderDirLead(dir, dirFiles, depth) : null;
         const dirRow = h("div", {
           class: "diff-tree-row diff-tree-dir",
           style: { paddingLeft: (depth * 12 + 6) + "px" },
           title: "Expand/collapse " + dir.name + "/",
         },
+          lead,
           chev,
           h("span", { class: "tree-folder-icon", ariaHidden: "true" }),
           h("span", { class: "diff-tree-name" }, dir.name + "/"),
@@ -851,6 +862,7 @@
     let lastDiffPath = null;
     let lastDiffSource = null;  // "staged" | "unstaged" | "untracked"
     let caretPos = null;        // caret offset to restore after a filter re-render
+    const selectedStatus = new Set();
 
     async function loadStatus() {
       const r = await git("status --porcelain=v2");
@@ -1159,6 +1171,17 @@
       }
     }
 
+    function statusKey(source, file) {
+      return source + ":" + file.path;
+    }
+
+    function pruneStatusSelection(status) {
+      const live = new Set();
+      for (const f of status.staged || []) live.add(statusKey("staged", f));
+      for (const f of status.unstaged || []) live.add(statusKey(f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged", f));
+      for (const key of [...selectedStatus]) if (!live.has(key)) selectedStatus.delete(key);
+    }
+
     async function selectFile(file, source, diffNode) {
       state.selectedFile = file ? `${source}:${file.path}` : null;
       lastDiffPath = file?.path;
@@ -1251,6 +1274,59 @@
       ui.toast("Discarded changes", "success");
       await refresh();
     }
+
+    async function discardStatusEntries(entries, label) {
+      if (!entries.length) return;
+      const ok = await ui.confirm({
+        title: "Discard " + label + "?",
+        body: `Permanently discard ${entries.length} selected item${entries.length === 1 ? "" : "s"}. Untracked files/folders will be deleted from disk. There's no undo.`,
+        danger: true,
+        okLabel: "Discard",
+      });
+      if (!ok) return;
+
+      let fail = 0;
+      const seen = new Set();
+      for (const entry of entries) {
+        const file = entry.file;
+        const path = String(file.path || "");
+        const dedupeKey = entry.source + ":" + path;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+
+        let r = { code: 0 };
+        if (file.untracked || entry.source === "untracked") {
+          const target = path.replace(/\/+$/, "") || path;
+          r = await sh("rm -rf -- " + quote(target));
+        } else if (file.submodule || entry.source === "submodule") {
+          r = await git("-C " + quote(path) + " restore --staged --worktree .");
+          if (r.code === 0) r = await git("-C " + quote(path) + " clean -fd");
+          if (r.code === 0) r = await git("submodule update --checkout -- " + quote(path));
+        } else if (entry.source === "staged") {
+          r = await git("restore --staged --worktree -- " + quote(path));
+          if (r.code !== 0) r = await git("checkout HEAD -- " + quote(path));
+        } else {
+          r = await git("restore -- " + quote(path));
+          if (r.code !== 0) r = await git("checkout -- " + quote(path));
+        }
+        if (r.code !== 0) fail++;
+      }
+      selectedStatus.clear();
+      ui.toast(fail ? `Done — ${fail} discard(s) failed` : "Discarded " + label, fail ? "error" : "success", fail ? 5000 : 2400);
+      await refresh();
+    }
+
+    function statusEntriesFrom(status, keys) {
+      const out = [];
+      const wanted = keys ? new Set(keys) : null;
+      const add = (source, file) => {
+        const key = statusKey(source, file);
+        if (!wanted || wanted.has(key)) out.push({ source, file });
+      };
+      for (const f of status.staged || []) add("staged", f);
+      for (const f of status.unstaged || []) add(f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged", f);
+      return out;
+    }
     async function commit() {
       const msg = state.commitMsg.trim();
       if (!state.commitAmend && !msg) { ui.toast("Commit message required", "error"); return; }
@@ -1273,11 +1349,25 @@
     function statusTreeRow(file, source, diffNode, filter) {
       const isStaged = source === "staged";
       const isSubmodule = source === "submodule";
+      const key = statusKey(source, file);
       const statusText = file.untracked ? "new" : file.code;
       const statusTitle = file.submodule
         ? "Submodule: " + (file.submoduleSummary || "dirty")
         : file.untracked ? "Untracked" : "";
       return [
+        h("input", {
+          type: "checkbox",
+          class: "status-check",
+          checked: selectedStatus.has(key),
+          title: "Select " + file.path,
+          onChange: (e) => {
+            e.stopPropagation();
+            if (e.target.checked) selectedStatus.add(key);
+            else selectedStatus.delete(key);
+            render();
+          },
+          onClick: (e) => e.stopPropagation(),
+        }),
         gmFileIcon(file.path),
         h("span", { class: "file-status status-" + gmStatusClass(file.code), title: statusTitle }, statusText),
         h("span", { class: "file-name", title: file.path,
@@ -1291,6 +1381,28 @@
       ];
     }
 
+    function statusDirCheckbox(files, sourceFor) {
+      const keys = files.map((f) => statusKey(sourceFor(f), f));
+      const checkedCount = keys.filter((k) => selectedStatus.has(k)).length;
+      const checkbox = h("input", {
+        type: "checkbox",
+        class: "status-check status-dir-check",
+        checked: keys.length > 0 && checkedCount === keys.length,
+        title: "Select folder",
+        onChange: (e) => {
+          e.stopPropagation();
+          for (const key of keys) {
+            if (e.target.checked) selectedStatus.add(key);
+            else selectedStatus.delete(key);
+          }
+          render();
+        },
+        onClick: (e) => e.stopPropagation(),
+      });
+      checkbox.indeterminate = checkedCount > 0 && checkedCount < keys.length;
+      return checkbox;
+    }
+
     async function render() {
       const node = pane();
       node.innerHTML = "";
@@ -1302,6 +1414,7 @@
         return;
       }
       state.statusFiles = { staged: status.staged, unstaged: status.unstaged };
+      pruneStatusSelection(status);
       paintTopBar();
 
       const filter = state.fileFilter.toLowerCase();
@@ -1320,6 +1433,7 @@
         filterInput,
         h("button", { class: "btn-ghost", onClick: stageAll, disabled: unstaged.length === 0 }, "Stage all"),
         h("button", { class: "btn-ghost", onClick: unstageAll, disabled: staged.length === 0 }, "Unstage all"),
+        h("button", { class: "btn-ghost danger", onClick: () => discardStatusEntries(statusEntriesFrom(status), "all changes"), disabled: status.staged.length + status.unstaged.length === 0 }, "Discard all"),
         h("div", { style: { flex: "1" } }),
         // View toggle: unified diff is one column with +/- prefixes; split
         // shows the old/new sides in two columns so paired changes line up.
@@ -1335,6 +1449,14 @@
         ),
       );
       node.append(toolbar);
+      if (selectedStatus.size > 0) {
+        node.append(h("div", { class: "bulk-bar status-bulk-bar" },
+          h("span", { class: "bulk-count" }, selectedStatus.size + " selected"),
+          h("div", { class: "toolbar-spacer" }),
+          h("button", { class: "btn-mini", onClick: () => { selectedStatus.clear(); render(); } }, "Clear"),
+          h("button", { class: "btn-mini danger", onClick: () => discardStatusEntries(statusEntriesFrom(status, selectedStatus), "selected changes") }, "Discard selected"),
+        ));
+      }
       // Restore the caret in the file filter after this render recreated it.
       if (caretPos != null) { filterInput.focus(); try { filterInput.setSelectionRange(caretPos, caretPos); } catch (_) {} caretPos = null; }
 
@@ -1357,6 +1479,7 @@
         }
         gmRenderFileTree(list, items, {
           keyFor: (f) => `${sourceFor(f)}:${f.path}`,
+          renderDirLead: (_dir, files) => statusDirCheckbox(files, sourceFor),
           renderRow: (f, _depth) => statusTreeRow(f, sourceFor(f), diffNode, filter),
           onPick: (f, row) => {
             const source = sourceFor(f);

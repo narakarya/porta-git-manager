@@ -216,13 +216,15 @@ code, kbd, .mono { font-family: var(--mono); }
 }
 .btn-primary { background: rgba(96, 165, 250, 0.12); border-color: rgba(96, 165, 250, 0.22); color: var(--blue); }
 .btn-primary:hover { background: rgba(96, 165, 250, 0.2); }
-.btn-primary:disabled, .btn:disabled, .btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary:disabled, .btn:disabled, .btn-danger:disabled, .btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn { background: rgba(255, 255, 255, 0.05); border-color: var(--border); color: var(--text); }
 .btn:hover { background: rgba(255, 255, 255, 0.08); }
 .btn-danger { background: rgba(248, 113, 113, 0.1); border-color: rgba(248, 113, 113, 0.2); color: var(--red); }
 .btn-danger:hover { background: rgba(248, 113, 113, 0.18); }
 .btn-ghost { background: transparent; color: var(--text-mute); }
 .btn-ghost:hover { color: var(--text); background: var(--bg-hover); }
+.btn-ghost.danger { color: var(--text-mute); }
+.btn-ghost.danger:hover { color: var(--red); background: rgba(248,113,113,.10); }
 
 .input, textarea.input, select.input {
   background: var(--bg-input);
@@ -277,8 +279,8 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
    `is-active` clause every tab's content piles on top of every other
    tab's. */
 .pane.is-active.status-pane {
-  display: grid;
-  grid-template-rows: 36px 1fr auto;
+  display: flex;
+  flex-direction: column;
   height: 100%;
 }
 
@@ -304,6 +306,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
 .status-split {
   display: grid;
   grid-template-columns: minmax(220px, 35%) 1fr;
+  flex: 1;
   min-height: 0;
 }
 
@@ -1538,6 +1541,19 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   padding-top: 4px;
   padding-bottom: 4px;
   gap: 8px;
+}
+.status-list .diff-tree-dir {
+  gap: 8px;
+}
+.status-check {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+.status-bulk-bar {
+  border-bottom-color: var(--border);
 }
 .status-list .diff-tree-file .file-status {
   font-family: var(--mono);

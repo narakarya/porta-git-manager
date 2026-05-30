@@ -4,6 +4,12 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.13] — 2026-05-30
+
+### Added
+- **Status tab can discard selected files or folders.** File rows now have checkboxes, folder and subfolder rows can select all nested files, and the bulk bar can discard only the selected changes.
+- **Status tab can discard all changes from the toolbar.** The action handles staged tracked files, unstaged files, untracked files/folders, and dirty submodules with one confirmation.
+
 ## [0.7.12] — 2026-05-30
 
 ### Changed
