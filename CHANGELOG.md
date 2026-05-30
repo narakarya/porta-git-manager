@@ -4,6 +4,14 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.19] — 2026-05-30
+
+### Changed
+- **The Branches tab no longer opens a viewer for `main`.** Local `main` and remote `*/main` rows stay available for checkout/delete actions, but clicking the row no longer tries to build a huge branch diff.
+
+### Fixed
+- **Large multi-file diff viewers no longer freeze on open.** Branch, stash, PR, and history viewers now defer very large files behind a per-file "Render anyway" control after the initial render budget is reached.
+
 ## [0.7.18] — 2026-05-30
 
 ### Fixed

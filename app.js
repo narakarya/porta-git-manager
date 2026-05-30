@@ -516,6 +516,110 @@
     return files;
   }
 
+  // Building a diff line is a handful of synchronous DOM nodes. A big multi-
+  // file diff (e.g. an AI branch that touched a lockfile / generated output)
+  // can be hundreds of thousands of lines — built all at once that freezes
+  // the renderer thread before the browser ever repaints, so the modal looks
+  // stuck on its loading skeleton. We bound the *initial* synchronous build:
+  // any file past these budgets renders a placeholder with a "Render anyway"
+  // button that builds just that file on demand. Mirrors WORD_DIFF_MAX_CELLS.
+  const DIFF_FILE_LINE_BUDGET = 2000;        // in a multi-file diff, files past this are deferred
+  const DIFF_TOTAL_LINE_BUDGET = 6000;       // once this much is rendered, defer the rest
+  const DIFF_SINGLE_FILE_LINE_BUDGET = 20000; // single-file view: only defer truly pathological files
+
+  // Decide whether a file should be deferred behind a "Render anyway"
+  // placeholder. In a multi-file diff there's a tree to navigate, so we defer
+  // eagerly; a lone file has nothing to fall back to, so only defer when it's
+  // pathologically large.
+  function gmShouldDeferFile(lineCount, total, rendered) {
+    if (total > 1) return lineCount > DIFF_FILE_LINE_BUDGET || rendered > DIFF_TOTAL_LINE_BUDGET;
+    return lineCount > DIFF_SINGLE_FILE_LINE_BUDGET;
+  }
+
+  function gmFileLineCount(f) {
+    let n = 0;
+    for (const hk of f.hunks) n += hk.lines.length;
+    return n;
+  }
+
+  // Build one file's unified body (header meta lines + hunks) into `body`.
+  function gmBuildUnifiedBody(body, f, lang) {
+    // git's "diff --git …" / "+++" / "---" header lines go inside the
+    // body (still visible when expanded, hidden when collapsed) — they're
+    // noise once the sticky header above shows the same path nicely.
+    for (const m of f.header) {
+      if (m.startsWith("diff ") || m.startsWith("+++") || m.startsWith("---")) continue;
+      body.append(h("span", { class: "diff-line diff-meta" }, m || " "));
+    }
+    for (const hunk of f.hunks) {
+      const wrapper = h("div", { class: "hunk" });
+      wrapper.append(h("div", { class: "hunk-header" }, hunk.header));
+      const range = window.GMDiff.parseHunkHeader(hunk.header);
+      const rows = window.GMDiff.numberHunkLines(hunk.lines, range);
+      for (let k = 0; k < rows.length; k++) {
+        const r = rows[k], next = rows[k + 1];
+        if (r.kind === "del" && next && next.kind === "add") {
+          const d = window.GMDiff.wordDiff(r.text, next.text);
+          if (d) {
+            r._wd = d.del; r._wd.cls = "wd-del";
+            next._wd = d.add; next._wd.cls = "wd-add";
+          }
+        }
+      }
+      for (const r of rows) {
+        if (r.kind === "meta") { wrapper.append(h("span", { class: "diff-line diff-meta" }, r.text || " ")); continue; }
+        const lineBody = r.text.slice(1) || " ";
+        wrapper.append(h("span", { class: "diff-line diff-" + r.kind },
+          h("span", { class: "diff-gutter" }, r.oldNo == null ? "" : String(r.oldNo)),
+          h("span", { class: "diff-gutter" }, r.newNo == null ? "" : String(r.newNo)),
+          h("span", { class: "diff-code", html: gmDiffCodeHtml(lineBody, lang, r._wd || null) }),
+        ));
+      }
+      body.append(wrapper);
+    }
+  }
+
+  // Build one file's split (side-by-side) body into `body`.
+  function gmBuildSplitBody(body, f, lang) {
+    for (const hunk of f.hunks) {
+      const wrapper = h("div", { class: "hunk hunk-split" });
+      wrapper.append(h("div", { class: "hunk-header" }, hunk.header));
+      const range = window.GMDiff.parseHunkHeader(hunk.header);
+      const numbered = window.GMDiff.numberHunkLines(hunk.lines, range);
+      const splitRows = window.GMDiff.toSplitRows(numbered);
+      const grid = h("div", { class: "diff-split" });
+      function cell(side, c) {
+        if (!c) {
+          return h("span", { class: "diff-cell diff-cell-" + side + " diff-blank" },
+            h("span", { class: "diff-gutter" }, ""),
+            h("span", { class: "diff-code", html: " " }));
+        }
+        const lineBody = c.text.slice(1) || " ";
+        return h("span", { class: "diff-cell diff-cell-" + side + " diff-" + c.kind },
+          h("span", { class: "diff-gutter" }, c.no == null ? "" : String(c.no)),
+          h("span", { class: "diff-code", html: gmDiffCodeHtml(lineBody, lang, c._wd || null) }));
+      }
+      for (const sr of splitRows) {
+        grid.append(cell("left", sr.left), cell("right", sr.right));
+      }
+      wrapper.append(grid);
+      body.append(wrapper);
+    }
+  }
+
+  // Append a "this file was deferred for performance" placeholder into `body`.
+  // `build` is invoked (once) when the user opts to render the file anyway.
+  function gmDeferredFilePlaceholder(body, lineCount, build) {
+    const note = h("div", { class: "diff-large-note" },
+      h("span", null, "Large diff — " + lineCount + " lines hidden to keep the viewer responsive."),
+      h("button", {
+        class: "btn-ghost diff-large-render",
+        onClick: (e) => { e.currentTarget.parentElement.remove(); build(); },
+      }, "Render anyway"),
+    );
+    body.append(note);
+  }
+
   /** Render parsed files read-only (unified view) into `node`. */
   function gmRenderDiffDoc(node, files) {
     node.innerHTML = "";
@@ -523,6 +627,7 @@
       node.append(h("div", { class: "status-diff-empty" }, "No changes to show."));
       return;
     }
+    let rendered = 0;
     for (const f of files) {
       const lang = window.GMHi.langFromPath(f.path || "");
       const block = h("div", { class: "diff-file-block" });
@@ -546,38 +651,14 @@
       });
       block.append(head);
 
-      // git's "diff --git …" / "+++" / "---" header lines go inside the
-      // body (still visible when expanded, hidden when collapsed) — they're
-      // noise once the sticky header above shows the same path nicely.
-      for (const m of f.header) {
-        if (m.startsWith("diff ") || m.startsWith("+++") || m.startsWith("---")) continue;
-        body.append(h("span", { class: "diff-line diff-meta" }, m || " "));
-      }
-      for (const hunk of f.hunks) {
-        const wrapper = h("div", { class: "hunk" });
-        wrapper.append(h("div", { class: "hunk-header" }, hunk.header));
-        const range = window.GMDiff.parseHunkHeader(hunk.header);
-        const rows = window.GMDiff.numberHunkLines(hunk.lines, range);
-        for (let k = 0; k < rows.length; k++) {
-          const r = rows[k], next = rows[k + 1];
-          if (r.kind === "del" && next && next.kind === "add") {
-            const d = window.GMDiff.wordDiff(r.text, next.text);
-            if (d) {
-              r._wd = d.del; r._wd.cls = "wd-del";
-              next._wd = d.add; next._wd.cls = "wd-add";
-            }
-          }
-        }
-        for (const r of rows) {
-          if (r.kind === "meta") { wrapper.append(h("span", { class: "diff-line diff-meta" }, r.text || " ")); continue; }
-          const lineBody = r.text.slice(1) || " ";
-          wrapper.append(h("span", { class: "diff-line diff-" + r.kind },
-            h("span", { class: "diff-gutter" }, r.oldNo == null ? "" : String(r.oldNo)),
-            h("span", { class: "diff-gutter" }, r.newNo == null ? "" : String(r.newNo)),
-            h("span", { class: "diff-code", html: gmDiffCodeHtml(lineBody, lang, r._wd || null) }),
-          ));
-        }
-        body.append(wrapper);
+      // Defer big files behind a placeholder so the initial synchronous build
+      // can't freeze the thread before the browser repaints.
+      const lineCount = gmFileLineCount(f);
+      if (gmShouldDeferFile(lineCount, files.length, rendered)) {
+        gmDeferredFilePlaceholder(body, lineCount, () => gmBuildUnifiedBody(body, f, lang));
+      } else {
+        rendered += lineCount;
+        gmBuildUnifiedBody(body, f, lang);
       }
 
       block.append(body);
@@ -596,6 +677,7 @@
       node.append(h("div", { class: "status-diff-empty" }, "No changes to show."));
       return;
     }
+    let rendered = 0;
     for (const f of files) {
       const lang = window.GMHi.langFromPath(f.path || "");
       const block = h("div", { class: "diff-file-block" });
@@ -617,30 +699,14 @@
       });
       block.append(head);
 
-      for (const hunk of f.hunks) {
-        const wrapper = h("div", { class: "hunk hunk-split" });
-        wrapper.append(h("div", { class: "hunk-header" }, hunk.header));
-        const range = window.GMDiff.parseHunkHeader(hunk.header);
-        const numbered = window.GMDiff.numberHunkLines(hunk.lines, range);
-        const splitRows = window.GMDiff.toSplitRows(numbered);
-        const grid = h("div", { class: "diff-split" });
-        function cell(side, c) {
-          if (!c) {
-            return h("span", { class: "diff-cell diff-cell-" + side + " diff-blank" },
-              h("span", { class: "diff-gutter" }, ""),
-              h("span", { class: "diff-code", html: " " }));
-          }
-          const lineBody = c.text.slice(1) || " ";
-          return h("span", { class: "diff-cell diff-cell-" + side + " diff-" + c.kind },
-            h("span", { class: "diff-gutter" }, c.no == null ? "" : String(c.no)),
-            h("span", { class: "diff-code", html: gmDiffCodeHtml(lineBody, lang, c._wd || null) }));
-        }
-        for (const sr of splitRows) {
-          grid.append(cell("left", sr.left), cell("right", sr.right));
-        }
-        wrapper.append(grid);
-        body.append(wrapper);
+      const lineCount = gmFileLineCount(f);
+      if (gmShouldDeferFile(lineCount, files.length, rendered)) {
+        gmDeferredFilePlaceholder(body, lineCount, () => gmBuildSplitBody(body, f, lang));
+      } else {
+        rendered += lineCount;
+        gmBuildSplitBody(body, f, lang);
       }
+
       block.append(body);
       node.append(block);
     }
@@ -1946,6 +2012,10 @@
           : h("span", { class: "branch-tag is-unmerged", title: "Has commits not in HEAD — delete needs force." }, "unmerged");
       }
 
+      function isMainBranch(b) {
+        return b.isRemote ? remoteParts(b.name).branch === "main" : b.name === "main";
+      }
+
       function branchRow(b, opts) {
         // Column 1 is now a single shared slot: green dot if this is the current
         // branch, otherwise a checkbox (or a transparent spacer for unselectable
@@ -2018,9 +2088,10 @@
       list.append(h("div", { class: "branch-section-title" }, "Local", h("span", { class: "count" }, String(filteredLocal.length))));
       if (filteredLocal.length === 0) list.append(h("div", { class: "empty-files" }, "No matching local branches"));
       for (const b of filteredLocal) {
+        const canViewDiff = !b.isCurrent && !isMainBranch(b);
         list.append(branchRow(b, {
           selectable: !b.isCurrent,
-          onActivate: !b.isCurrent ? diffBranch : null,
+          onActivate: canViewDiff ? diffBranch : null,
           tags: h("span", { class: "branch-tags" }, mergeBadge(b), remoteBadge(b), trackBadge(b)),
           actions: [
             !b.isCurrent && h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Switch"),
@@ -2034,9 +2105,10 @@
       if (filteredRemote.length > 0) {
         list.append(h("div", { class: "branch-section-title" }, "Remote", h("span", { class: "count" }, String(filteredRemote.length))));
         for (const b of filteredRemote) {
+          const canViewDiff = !isMainBranch(b);
           list.append(branchRow(b, {
             selectable: true,
-            onActivate: diffBranch,
+            onActivate: canViewDiff ? diffBranch : null,
             tags: null,
             actions: [
               h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Check out"),

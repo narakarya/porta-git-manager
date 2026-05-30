@@ -352,6 +352,19 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
   font-size: 11px;
 }
 
+/* Deferred large-file placeholder inside a diff body (perf guard). */
+.diff-large-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.diff-large-render {
+  flex: none;
+}
+
 /* Section header inside file list */
 .file-section-title {
   display: flex;
