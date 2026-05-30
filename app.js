@@ -1792,6 +1792,7 @@
   const historyTab = (() => {
     const pane = () => document.querySelector('.pane[data-pane="history"]');
     let caretPos = null; // caret offset to restore after a search re-render
+    let lastFiles = []; // parsed files of the most-recently-rendered commit (used by Tasks 17/18)
 
     async function loadLog(filter) {
       const sep = "\x1f";
@@ -1846,21 +1847,16 @@
 
       detailNode.append(card);
 
-      // Diff (still raw line-classed for now — Task 16 will replace with
-      // gmParseDiffDoc + gmRenderDiffDoc for gutter/syntax/word-diff).
-      const diffWrap = h("div");
+      const diffWrap = h("div", { class: "commit-diff" });
       detailNode.append(diffWrap);
       diffWrap.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
-      const r = await git("show --no-color --stat -p " + quote(commit.sha));
-      diffWrap.innerHTML = "";
-      for (const line of r.stdout.split("\n")) {
-        let cls = "diff-meta";
-        if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff ")) cls = "diff-file";
-        else if (line.startsWith("@@")) cls = "diff-hunk";
-        else if (line.startsWith("+")) cls = "diff-add";
-        else if (line.startsWith("-")) cls = "diff-del";
-        diffWrap.append(h("span", { class: "diff-line " + cls }, line || " "));
-      }
+      // `--format=` strips the commit header so we don't double-render it
+      // under the card we just built. `-p` gives the patch; stats are
+      // derived from the parsed files (used by D3 / Task 17).
+      const r = await git("show --no-color --format= -p " + quote(commit.sha));
+      const files = gmParseDiffDoc(r.stdout);
+      lastFiles = files;
+      gmRenderDiffDoc(diffWrap, files);
     }
 
     async function render() {
