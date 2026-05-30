@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.27] — 2026-05-30
+
+### Fixed
+- **HTML previews resolve local image assets.** Relative `<img src>` paths are now resolved from the previewed HTML file's folder and inlined as Blob URLs for the sandboxed preview iframe.
+
 ## [0.7.26] — 2026-05-30
 
 ### Fixed

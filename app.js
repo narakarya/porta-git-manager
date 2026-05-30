@@ -1101,12 +1101,63 @@
       }
       const r = await sh("head -c 524288 " + quote(path));
       if (r.code !== 0) return null;
+      const content = kind === "html" ? await inlineHtmlPreviewImages(r.stdout || "", path) : (r.stdout || "");
       return {
         kind,
         path,
         truncated: (r.stdout || "").length >= 524288,
-        content: r.stdout || "",
+        content,
       };
+    }
+
+    function pathDirname(path) {
+      const s = String(path || "");
+      const i = s.lastIndexOf("/");
+      return i === -1 ? "" : s.slice(0, i + 1);
+    }
+
+    function normalizeRepoPath(path) {
+      const out = [];
+      for (const part of String(path || "").split("/")) {
+        if (!part || part === ".") continue;
+        if (part === "..") out.pop();
+        else out.push(part);
+      }
+      return out.join("/");
+    }
+
+    function isRemoteOrEmbeddedUrl(url) {
+      return /^(https?:|data:|blob:|about:|mailto:|tel:|cid:|#)/i.test(String(url || "").trim());
+    }
+
+    function resolvePreviewAsset(baseFile, rawUrl) {
+      const raw = String(rawUrl || "").trim();
+      if (!raw || isRemoteOrEmbeddedUrl(raw)) return null;
+      const clean = raw.split("#")[0].split("?")[0];
+      if (!clean) return null;
+      return normalizeRepoPath(clean.startsWith("/") ? clean : pathDirname(baseFile) + clean);
+    }
+
+    async function imageBlobUrlForPath(path) {
+      const mime = imageMime(path);
+      if (!mime) return null;
+      const r = await sh("base64 -i " + quote(path));
+      if (r.code !== 0 || !r.stdout) return null;
+      return imagePreviewUrl({ mime, base64: r.stdout.replace(/\s+/g, "") });
+    }
+
+    async function inlineHtmlPreviewImages(html, baseFile) {
+      const re = /\bsrc\s*=\s*(["'])([^"']+)\1/gi;
+      let out = "", last = 0, match;
+      while ((match = re.exec(html))) {
+        const raw = match[2];
+        const asset = resolvePreviewAsset(baseFile, raw);
+        const blobUrl = asset ? await imageBlobUrlForPath(asset) : null;
+        out += html.slice(last, match.index);
+        out += blobUrl ? 'src="' + blobUrl + '"' : match[0];
+        last = match.index + match[0].length;
+      }
+      return out + html.slice(last);
     }
 
     /**
