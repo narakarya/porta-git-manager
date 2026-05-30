@@ -4,8 +4,10 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-05-30
+
 ### Fixed
-- Split-view diff right column no longer overflows past the modal edge. Grid templates now use `minmax(0, 1fr)` so both sides stay 50/50, and long lines scroll horizontally inside each code cell instead of pushing the layout wider than its container.
+- Split-view diff right column no longer overflows past the modal edge. Grid templates now use `minmax(0, 1fr)` so both sides stay 50/50, and long lines scroll horizontally inside each code cell instead of pushing the layout wider than its container. Same fix benefits the Status tab's split view (shared `.diff-cell` rules).
 
 ## [0.7.0] — 2026-05-30
 
