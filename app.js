@@ -106,6 +106,53 @@
       region.appendChild(t);
       if (ms > 0) setTimeout(() => t.remove(), ms);
     },
+
+    /**
+     * Show a skeleton "loading" card in the modal slot.  Returns `true` if it
+     * actually took ownership of the slot, `false` if another modal/loading
+     * was already up — callers should bail out on `false` to avoid running
+     * a second fetch behind the first (the double-click guard).
+     *
+     * `ui.diffModal` knows to swap in over an active loading card so the
+     * skeleton transitions smoothly to the real content (no flicker through
+     * a closed state).
+     */
+    showLoading(label) {
+      const root = $("#modal-root");
+      // Already showing a real modal OR another loading card — refuse.
+      if (!root.hidden && !root.dataset.loadingActive) return false;
+      if (root.dataset.loadingActive) return false;
+      root.hidden = false;
+      root.dataset.loadingActive = "1";
+      root.innerHTML = "";
+      const card = h("div", { class: "modal-card modal-wide modal-loading" },
+        h("div", { class: "diff-modal-head" },
+          h("div", { class: "diff-modal-title" },
+            h("div", { class: "skel skel-line skel-modal-title" }),
+            label && h("p", { class: "diff-modal-sub diff-modal-loading-label" }, label),
+          ),
+        ),
+        h("div", { class: "diff-modal-main is-loading" },
+          h("div", { class: "diff-modal-content" },
+            h("div", { class: "skel skel-loading-file-head" }),
+            ...Array.from({ length: 8 }, () => h("div", { class: "skel skel-diff-line" })),
+            h("div", { class: "skel skel-loading-file-head" }),
+            ...Array.from({ length: 6 }, () => h("div", { class: "skel skel-diff-line" })),
+          ),
+        ),
+      );
+      root.appendChild(card);
+      return true;
+    },
+
+    /** Dismiss the loading card if it's still up. No-op otherwise. */
+    hideLoading() {
+      const root = $("#modal-root");
+      if (!root.dataset.loadingActive) return;
+      delete root.dataset.loadingActive;
+      root.hidden = true;
+      root.innerHTML = "";
+    },
     confirm({ title, body, danger, okLabel = "OK", cancelLabel = "Cancel" }) {
       return new Promise((resolve) => {
         const root = $("#modal-root");
@@ -187,6 +234,11 @@
     diffModal({ title, subtitle, files, refetch }) {
       return new Promise((resolve) => {
         const root = $("#modal-root");
+        // Double-open guard: if a *real* modal is already up, refuse. A
+        // loading skeleton is acceptable — we'll overwrite it (the smooth
+        // transition between "loading" and "real" modal).
+        if (!root.hidden && !root.dataset.loadingActive) { resolve(); return; }
+        if (root.dataset.loadingActive) delete root.dataset.loadingActive;
         root.hidden = false;
         root.innerHTML = "";
         const close = () => {
@@ -1467,6 +1519,8 @@
     // branch doesn't. Only when BOTH directions are empty is the branch truly
     // identical to HEAD.
     async function diffBranch(b) {
+      // Double-click guard via showLoading — bail if a modal is already up.
+      if (!ui.showLoading("Diffing " + b.name + "…")) return;
       const ref = b.name;
       let direction = "branch-side";
 
@@ -1480,23 +1534,34 @@
         return gmParseDiffDoc(r.stdout);
       };
 
-      let files = await fetchFiles();
-      let title = "Branch diff: " + b.name;
-      let subtitle = files.length + " files changed";
+      try {
+        let files = await fetchFiles();
+        let title = "Branch diff: " + b.name;
+        let subtitle = files.length + " files changed";
 
-      if (!files.length) {
-        // Three-dot empty — try the other direction.
-        direction = "head-side";
-        files = await fetchFiles();
         if (!files.length) {
-          ui.toast("Branch is identical to HEAD — nothing to diff.", "info", 4000);
-          return;
+          // Three-dot empty — try the other direction.
+          direction = "head-side";
+          files = await fetchFiles();
+          if (!files.length) {
+            ui.hideLoading();
+            // For branches the user already knows are merged (badge says so),
+            // a long "identical to HEAD" toast is just noise. Short ack
+            // instead. Truly-identical unmerged branches keep the longer
+            // explanation because that case is less obvious.
+            if (b.merged) ui.toast("Already merged.", "info", 2000);
+            else ui.toast("Branch is identical to HEAD — nothing to diff.", "info", 4000);
+            return;
+          }
+          title = "Branch diff: " + b.name + " (behind HEAD)";
+          subtitle = files.length + " files HEAD carries that this branch doesn't";
         }
-        title = "Branch diff: " + b.name + " (behind HEAD)";
-        subtitle = files.length + " files HEAD carries that this branch doesn't";
-      }
 
-      await ui.diffModal({ title, subtitle, files, refetch: fetchFiles });
+        await ui.diffModal({ title, subtitle, files, refetch: fetchFiles });
+      } catch (err) {
+        ui.hideLoading();
+        ui.toast(err.message || "Diff failed", "error", 5000);
+      }
     }
 
     // Load + initial paint. The search box lives here so it survives
@@ -1902,6 +1967,11 @@
 
     function openInViewer(commit, files) {
       if (!files || !files.length) { ui.toast("No diff to show", "info"); return; }
+      // Double-click guard. We already have `files` in hand from the inline
+      // detail render, but the modal-level guard is what prevents two opens
+      // — call showLoading purely to occupy the slot, then immediately swap
+      // in via diffModal (no visible skeleton time since files are ready).
+      if (!ui.showLoading("Opening viewer…")) return;
       const fetchFiles = async ({ ignoreWhitespace, context } = { ignoreWhitespace: false, context: 3 }) => {
         const flags = (ignoreWhitespace ? " -w" : "") + " -U" + context;
         const r = await git("show --no-color --format= -p" + flags + " " + quote(commit.sha));
@@ -2323,20 +2393,34 @@
       await refresh();
     }
     async function show(s) {
+      // showLoading returns false if a modal/loading is already up — that's
+      // the double-click guard. Bail early so we don't queue a second fetch
+      // behind the first.
+      if (!ui.showLoading("Loading stash diff…")) return;
       const fetchFiles = async ({ ignoreWhitespace, context } = { ignoreWhitespace: false, context: 3 }) => {
         const flags = (ignoreWhitespace ? " -w" : "") + " -U" + context;
         const r = await git("stash show -p --no-color" + flags + " " + quote(s.ref));
         if (r.code !== 0) throw new Error(r.stderr || "Could not load stash diff");
         return gmParseDiffDoc(r.stdout);
       };
-      const files = await fetchFiles();
-      if (!files.length) { ui.toast("Stash has no tracked changes to preview", "info"); return; }
-      await ui.diffModal({
-        title: s.ref + (s.branch ? " · on " + s.branch : ""),
-        subtitle: s.desc || null,
-        files,
-        refetch: fetchFiles,
-      });
+      try {
+        const files = await fetchFiles();
+        if (!files.length) {
+          ui.hideLoading();
+          ui.toast("Stash has no tracked changes to preview", "info");
+          return;
+        }
+        // ui.diffModal sees loadingActive and swaps in over the skeleton.
+        await ui.diffModal({
+          title: s.ref + (s.branch ? " · on " + s.branch : ""),
+          subtitle: s.desc || null,
+          files,
+          refetch: fetchFiles,
+        });
+      } catch (err) {
+        ui.hideLoading();
+        ui.toast(err.message || "Failed to load stash diff", "error", 5000);
+      }
     }
 
     // Drop every ticked stash. Refs are positional (stash@{0}, stash@{1}…) and
@@ -2704,11 +2788,28 @@
     }
 
     async function viewDiff(num) {
-      const r = await gh("pr diff " + num + " --color never");
-      if (r.code !== 0) { ui.toast(r.stderr || "Could not load PR diff", "error", 5000); return; }
-      const files = gmParseDiffDoc(r.stdout);
-      if (!files.length) { ui.toast("PR has no diff", "info"); return; }
-      await ui.diffModal({ title: "PR #" + num + " diff", subtitle: files.length + " file(s) changed", files });
+      // Double-click guard via showLoading — the gh pr diff fetch can take a
+      // few seconds for large PRs; without this, two quick clicks queued two
+      // fetches and the second eventually re-opened the modal.
+      if (!ui.showLoading("Loading PR #" + num + " diff…")) return;
+      try {
+        const r = await gh("pr diff " + num + " --color never");
+        if (r.code !== 0) {
+          ui.hideLoading();
+          ui.toast(r.stderr || "Could not load PR diff", "error", 5000);
+          return;
+        }
+        const files = gmParseDiffDoc(r.stdout);
+        if (!files.length) {
+          ui.hideLoading();
+          ui.toast("PR has no diff", "info");
+          return;
+        }
+        await ui.diffModal({ title: "PR #" + num + " diff", subtitle: files.length + " file(s) changed", files });
+      } catch (err) {
+        ui.hideLoading();
+        ui.toast(err.message || "Could not load PR diff", "error", 5000);
+      }
     }
 
     async function checkout(num) {

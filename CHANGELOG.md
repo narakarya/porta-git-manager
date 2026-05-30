@@ -4,6 +4,16 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.5] — 2026-05-30
+
+### Added
+- **JetBrains Mono everywhere code is rendered.** All `font-family: ui-monospace, Menlo, monospace` declarations consolidated behind a single `--mono` CSS variable that prefers JetBrains Mono (loaded via Google Fonts `@import`) and falls back to the system mono stack offline. Applies to diff code, hunk headers, sha pills, branch chips, history log, rebase rows, tag pills, kbd badges, textarea input — everything.
+- **Consistent loading skeleton across every diff-modal open.** New `ui.showLoading(label)` / `ui.hideLoading()` helpers render a modal-shell skeleton with shimmer placeholders for the file header and ~14 diff lines. Wired into stash row click, branch row click, PR diff, and History "Open in viewer" — previously these had no loading state at all and the modal just appeared 100–2000ms later out of nowhere.
+
+### Fixed
+- **Double-click on stash/branch/PR rows no longer opens the modal twice.** `ui.showLoading` returns `false` if a modal or skeleton is already up — callers bail out. `ui.diffModal` also refuses if a real modal exists (and seamlessly overwrites a loading skeleton in the smooth-transition path).
+- **Merged-branch diff toast is now a quiet "Already merged."** instead of the longer "Branch is identical to HEAD — nothing to diff." Truly-identical unmerged branches keep the original wording because that case isn't obvious from the row.
+
 ## [0.7.4] — 2026-05-30
 
 ### Fixed
