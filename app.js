@@ -1488,9 +1488,13 @@
         value: state.fileFilter,
         onInput: (e) => { caretPos = e.target.selectionStart; state.fileFilter = e.target.value; render(); },
       });
+      const selectedCount = selectedStatus.size;
       const toolbar = h("div", { class: "status-toolbar" },
         filterInput,
-        h("div", { style: { flex: "1" } }),
+        selectedCount > 0 && h("span", { class: "toolbar-bulk-count" }, selectedCount + " selected"),
+        selectedCount > 0 && h("button", { class: "btn-mini", onClick: () => { selectedStatus.clear(); render(); } }, "Clear"),
+        selectedCount > 0 && h("button", { class: "btn-mini danger", onClick: () => discardStatusEntries(statusEntriesFrom(status, selectedStatus), "selected changes") }, "Discard selected"),
+        h("div", { class: "toolbar-spacer" }),
         // View toggle: unified diff is one column with +/- prefixes; split
         // shows the old/new sides in two columns so paired changes line up.
         h("div", { class: "view-toggle" },
@@ -1505,14 +1509,6 @@
         ),
       );
       node.append(toolbar);
-      if (selectedStatus.size > 0) {
-        node.append(h("div", { class: "bulk-bar status-bulk-bar" },
-          h("span", { class: "bulk-count" }, selectedStatus.size + " selected"),
-          h("div", { class: "toolbar-spacer" }),
-          h("button", { class: "btn-mini", onClick: () => { selectedStatus.clear(); render(); } }, "Clear"),
-          h("button", { class: "btn-mini danger", onClick: () => discardStatusEntries(statusEntriesFrom(status, selectedStatus), "selected changes") }, "Discard selected"),
-        ));
-      }
       // Restore the caret in the file filter after this render recreated it.
       if (caretPos != null) { filterInput.focus(); try { filterInput.setSelectionRange(caretPos, caretPos); } catch (_) {} caretPos = null; }
 

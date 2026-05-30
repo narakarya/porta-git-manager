@@ -4,6 +4,15 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.18] — 2026-05-30
+
+### Fixed
+- **Elixir, Ruby, and Python file icons rendered blank.** Their Devicon `-original` glyphs define gradients inside the sprite `<symbol>`, which Chromium fails to paint when referenced through `<use>`. Swapped to the solid `-plain` variants (Elixir in brand purple, Ruby red, Python yellow) so they render crisply at icon size.
+
+### Changed
+- **Status bulk-selection actions moved into the toolbar.** The "N selected · Clear · Discard selected" controls now sit inline in the Status toolbar instead of a separate bar below it.
+- **Top bar and panes are more responsive.** Hardened flex/grid overflow handling so the branch chip truncates gracefully, tag/remote rows don't push actions off-screen, and panes scroll instead of clipping in narrow windows.
+
 ## [0.7.17] — 2026-05-30
 
 ### Added
