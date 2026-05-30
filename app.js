@@ -386,6 +386,20 @@
     }
   }
 
+  /** Return an <svg.ficon> referencing the appropriate sprite symbol by file extension. */
+  function gmFileIcon(path) {
+    const ext = (path || "").split(".").pop().toLowerCase();
+    const known = ["ts", "tsx", "js", "jsx", "json", "css", "html", "md", "rs", "py", "sh"];
+    const id = known.includes(ext) ? "ficon-" + ext : "ficon-generic";
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "ficon");
+    svg.setAttribute("viewBox", "0 0 14 14");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", "#" + id);
+    svg.appendChild(use);
+    return svg;
+  }
+
   /** Default row renderer — matches the previous diff modal look (+/- pills). */
   function defaultDiffRow(f) {
     const st = gmFileStats(f);

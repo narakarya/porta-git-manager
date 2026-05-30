@@ -1308,3 +1308,14 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .pr-create-head { font-size: 12px; color: var(--text-mute); }
 .pr-create-head strong { color: var(--text); }
 .pr-create-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+.ficon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-mute);
+}
+.diff-tree-file:hover .ficon,
+.diff-tree-file.is-active .ficon,
+.file-row:hover .ficon,
+.file-row.is-selected .ficon { color: var(--text); }
