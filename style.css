@@ -679,7 +679,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 }
 .branch-row {
   display: grid;
-  grid-template-columns: 16px 16px 1fr auto;
+  grid-template-columns: 16px 1fr auto;
   align-items: center;
   gap: 10px;
   padding: 9px 14px;

@@ -1271,13 +1271,22 @@
       }
 
       function branchRow(b, opts) {
-        const checkbox = opts.selectable
-          ? h("input", { type: "checkbox", class: "branch-check", checked: selected.has(b.name),
-              onChange: (e) => toggle(b.name, e.target.checked) })
-          : h("span", { class: "branch-check-spacer" });
+        // Column 1 is now a single shared slot: green dot if this is the current
+        // branch, otherwise a checkbox (or a transparent spacer for unselectable
+        // non-current rows). Earlier versions kept two side-by-side 16px columns,
+        // which left the dot visually unaligned with the checkbox column.
+        let lead;
+        if (b.isCurrent) {
+          lead = h("span", { class: "branch-marker" }, "●");
+        } else if (opts.selectable) {
+          lead = h("input", { type: "checkbox", class: "branch-check",
+            checked: selected.has(b.name),
+            onChange: (e) => toggle(b.name, e.target.checked) });
+        } else {
+          lead = h("span", { class: "branch-check-spacer" });
+        }
         return h("div", { class: "branch-row" + (b.isCurrent ? " is-current" : "") + (selected.has(b.name) ? " is-checked" : "") },
-          checkbox,
-          h("span", { class: "branch-marker" }, b.isCurrent ? "●" : ""),
+          lead,
           h("div", { class: "branch-main" },
             h("div", { class: "branch-line" },
               h("span", { class: "branch-name", title: b.name, html: hl(b.name) }),
