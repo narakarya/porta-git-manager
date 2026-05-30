@@ -1408,3 +1408,17 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   background: rgba(255, 255, 255, 0.04);
   font-size: 10px;
 }
+
+.diff-modal-opts { display: flex; gap: 10px; align-items: center; margin-right: 8px; }
+.diff-modal-opt {
+  display: inline-flex; gap: 5px; align-items: center;
+  font-size: 11px; color: var(--text-mute);
+}
+.diff-modal-opt-select {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 2px 5px;
+}

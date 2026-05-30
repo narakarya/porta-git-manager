@@ -184,7 +184,7 @@
      * Used by the stash and branch "View"/"Diff" previews — rendering only,
      * no stage/discard actions. Resolves when dismissed.
      */
-    diffModal({ title, subtitle, files }) {
+    diffModal({ title, subtitle, files, refetch }) {
       return new Promise((resolve) => {
         const root = $("#modal-root");
         root.hidden = false;
@@ -201,6 +201,10 @@
         const content = h("div", { class: "diff-modal-content" });
         let viewMode = "unified";
         let currentList = files;
+        const hasRefetch = typeof refetch === "function";
+        let ignoreWs = false;
+        let contextLines = 3;
+        let currentFiles = files;
         const renderInto = (list) => {
           currentList = list;
           if (viewMode === "split") gmRenderDiffDocSplit(content, list);
@@ -209,15 +213,41 @@
         };
         const showList = (list) => renderInto(list);
 
+        const activeRowRef = { row: null };
+        const paintTreeRef = { fn: null };
+
+        async function reload() {
+          if (!hasRefetch) return;
+          try {
+            const fresh = await refetch({ ignoreWhitespace: ignoreWs, context: contextLines });
+            if (!Array.isArray(fresh)) return;
+            currentFiles = fresh;
+            if (paintTreeRef.fn) {
+              paintTreeRef.fn();
+            }
+            if (activeRowRef.row && activeRowRef.row.classList.contains("diff-tree-all")) {
+              renderInto(currentFiles);
+            } else if (activeRowRef.row) {
+              const path = activeRowRef.row.dataset.path;
+              const match = currentFiles.find((f) => f.path === path);
+              renderInto(match ? [match] : currentFiles);
+            } else {
+              renderInto(currentFiles);
+            }
+          } catch (e) {
+            ui.toast("Could not refresh diff: " + (e.message || e), "error", 5000);
+          }
+        }
+
         let main;
         if (files.length > 1) {
           // VSCode-style: a file tree on the left, the selected file's diff on
           // the right. "All files" shows the full multi-file diff.
           const nav = h("div", { class: "diff-tree" });
-          let activeRow = null;
+          activeRowRef.row = null;
           const setActive = (row) => {
-            if (activeRow) activeRow.classList.remove("is-active");
-            activeRow = row;
+            if (activeRowRef.row) activeRowRef.row.classList.remove("is-active");
+            activeRowRef.row = row;
             if (row) row.classList.add("is-active");
           };
           const totals = files.reduce((acc, f) => { const s = gmFileStats(f); acc.add += s.add; acc.del += s.del; return acc; }, { add: 0, del: 0 });
@@ -239,19 +269,19 @@
 
           function paintTree() {
             treeBody.innerHTML = "";
-            const visible = gmFilterFiles(files, treeFilter);
+            const visible = gmFilterFiles(currentFiles, treeFilter);
             const allRow = h("button", {
-              class: "diff-tree-row diff-tree-all" + (!treeFilter && (!activeRow || activeRow === null) ? " is-active" : ""),
+              class: "diff-tree-row diff-tree-all" + (!treeFilter && (!activeRowRef.row || activeRowRef.row === null) ? " is-active" : ""),
               onClick: () => { setActive(allRow); showList(visible); },
             },
               h("span", { class: "diff-tree-name" },
-                visible.length + (treeFilter ? " of " + files.length : "") + " files changed"),
+                visible.length + (treeFilter ? " of " + currentFiles.length : "") + " files changed"),
               h("span", { class: "diff-tree-stat" },
                 h("span", { class: "stat-add" }, "+" + totals.add),
                 h("span", { class: "stat-del" }, "−" + totals.del)),
             );
-            if (!activeRow) {
-              activeRow = allRow;
+            if (!activeRowRef.row) {
+              activeRowRef.row = allRow;
               allRow.classList.add("is-active");
             }
             treeBody.append(allRow);
@@ -263,6 +293,7 @@
               onPick: (f, row) => { setActive(row); showList([f]); },
             });
           }
+          paintTreeRef.fn = paintTree;
           paintTree();
 
           nav.append(toolbar);
@@ -271,6 +302,24 @@
         } else {
           main = h("div", { class: "diff-modal-main is-single" }, content);
         }
+
+        const wsChk = h("input", {
+          type: "checkbox",
+          checked: ignoreWs,
+          onChange: (e) => { ignoreWs = e.target.checked; reload(); },
+        });
+        const wsLabel = h("label", { class: "diff-modal-opt" }, wsChk, "Ignore whitespace");
+
+        const ctxSelect = h("select", {
+          class: "diff-modal-opt-select",
+          onChange: (e) => { contextLines = e.target.value === "all" ? 99999 : Number(e.target.value); reload(); },
+        },
+          h("option", { value: "3" }, "±3 ctx"),
+          h("option", { value: "6" }, "±6 ctx"),
+          h("option", { value: "all" }, "All ctx"),
+        );
+
+        const optsBar = hasRefetch ? h("div", { class: "diff-modal-opts" }, wsLabel, ctxSelect) : null;
 
         const toggle = h("div", { class: "view-toggle" },
           h("button", {
@@ -301,6 +350,7 @@
               h("h3", null, title),
               subtitle && h("p", { class: "diff-modal-sub", title: subtitle }, subtitle),
             ),
+            optsBar,
             toggle,
             h("button", { class: "btn-ghost", onClick: close }, "Close"),
           ),
@@ -535,6 +585,7 @@
           style: { paddingLeft: (depth * 12 + 10) + "px" },
           onClick: () => onPick(f, row),
         }, ...(Array.isArray(inner) ? inner : [inner]));
+        row.dataset.path = f.path;
         nav.append(row);
       }
     }
@@ -1330,18 +1381,23 @@
     // `HEAD...<branch>` (three-dot) diffs against the merge-base, so it shows
     // only that branch's own changes, not commits unique to HEAD.
     async function diffBranch(b) {
-      const r = await git("diff --no-color HEAD..." + quote(b.name));
-      if (r.code !== 0) { ui.toast(r.stderr || "Could not load branch diff", "error", 5000); return; }
-      const files = gmParseDiffDoc(r.stdout);
+      const ref = b.name;
+      const fetchFiles = async ({ ignoreWhitespace, context } = { ignoreWhitespace: false, context: 3 }) => {
+        const flags = (ignoreWhitespace ? " -w" : "") + " -U" + context;
+        const r = await git("diff HEAD..." + quote(ref) + " --no-color" + flags);
+        if (r.code !== 0) throw new Error(r.stderr || "Diff failed");
+        return gmParseDiffDoc(r.stdout);
+      };
+      const files = await fetchFiles();
       if (!files.length) {
         ui.toast("No changes vs current branch (already merged or identical)", "info", 4000);
         return;
       }
-      const label = b.isRemote ? b.name.replace(/^remotes\//, "") : b.name;
       await ui.diffModal({
-        title: "Changes on " + label,
-        subtitle: "git diff HEAD..." + label + " — relative to " + (state.branch || "HEAD"),
+        title: "Branch diff: " + b.name,
+        subtitle: files.length + " files changed",
         files,
+        refetch: fetchFiles,
       });
     }
 
@@ -2027,16 +2083,19 @@
       await refresh();
     }
     async function show(s) {
-      // `stash show -p` emits the tracked diff of the stash without touching
-      // the working tree — exactly what we want for a read-only preview.
-      const r = await git("stash show -p --no-color " + quote(s.ref));
-      if (r.code !== 0) { ui.toast(r.stderr || "Could not load stash diff", "error", 5000); return; }
-      const files = gmParseDiffDoc(r.stdout);
+      const fetchFiles = async ({ ignoreWhitespace, context } = { ignoreWhitespace: false, context: 3 }) => {
+        const flags = (ignoreWhitespace ? " -w" : "") + " -U" + context;
+        const r = await git("stash show -p --no-color" + flags + " " + quote(s.ref));
+        if (r.code !== 0) throw new Error(r.stderr || "Could not load stash diff");
+        return gmParseDiffDoc(r.stdout);
+      };
+      const files = await fetchFiles();
       if (!files.length) { ui.toast("Stash has no tracked changes to preview", "info"); return; }
       await ui.diffModal({
         title: s.ref + (s.branch ? " · on " + s.branch : ""),
         subtitle: s.desc || null,
         files,
+        refetch: fetchFiles,
       });
     }
 
