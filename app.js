@@ -133,11 +133,21 @@
           ),
         ),
         h("div", { class: "diff-modal-main is-loading" },
+          h("div", { class: "diff-tree diff-modal-loading-tree" },
+            h("div", { class: "diff-tree-toolbar" },
+              h("div", { class: "skel skel-tree-filter" }),
+            ),
+            h("div", { class: "diff-tree-body" },
+              ...Array.from({ length: 12 }, (_, i) => h("div", {
+                class: "skel skel-tree-row skel-tree-row-" + (i % 4),
+              })),
+            ),
+          ),
           h("div", { class: "diff-modal-content" },
             h("div", { class: "skel skel-loading-file-head" }),
-            ...Array.from({ length: 8 }, () => h("div", { class: "skel skel-diff-line" })),
+            ...Array.from({ length: 10 }, (_, i) => h("div", { class: "skel skel-diff-line skel-diff-line-" + (i % 5) })),
             h("div", { class: "skel skel-loading-file-head" }),
-            ...Array.from({ length: 6 }, () => h("div", { class: "skel skel-diff-line" })),
+            ...Array.from({ length: 8 }, (_, i) => h("div", { class: "skel skel-diff-line skel-diff-line-" + (i % 5) })),
           ),
         ),
       );
@@ -660,19 +670,21 @@
    *
    * opts = {
    *   depth?: number,                  // initial padding depth (default 0)
-   *   onPick(file, rowEl): void,       // file click handler
+   *   onPick(file, rowEl, event): void,// file click handler
+   *   onDirPick(files, rowEl, event): void, // optional folder click handler
    *   renderRow(file, depth): Node,    // builds and returns the file row inner content;
    *                                    // MUST NOT attach its own click handler
    *                                    // (we attach onPick to the wrapper button)
-   *   renderDirLead(dir, files, depth): Node, // optional node before the chevron
    *   keyFor(file): string,            // optional stable row key for selection
+   *   rowClassFor(file): string,       // optional additional row class
    * }
    */
   function gmRenderFileTree(nav, files, opts) {
     const node = gmFileTree(files);
     const onPick = opts.onPick || (() => {});
+    const onDirPick = opts.onDirPick || null;
     const renderRow = opts.renderRow || defaultDiffRow;
-    const renderDirLead = opts.renderDirLead || null;
+    const rowClassFor = opts.rowClassFor || (() => "");
     walk(nav, node, opts.depth || 0);
 
     function collectFiles(n) {
@@ -689,19 +701,21 @@
         // caller fully re-renders the tree, folders reset to expanded.
         const chev = h("span", { class: "tree-chev" }, "▾");
         const dirFiles = collectFiles(dir);
-        const lead = renderDirLead ? renderDirLead(dir, dirFiles, depth) : null;
         const dirRow = h("div", {
           class: "diff-tree-row diff-tree-dir",
           style: { paddingLeft: (depth * 12 + 6) + "px" },
-          title: "Expand/collapse " + dir.name + "/",
+          title: onDirPick ? "Click to expand/collapse. Cmd/Ctrl-click to select folder." : "Expand/collapse " + dir.name + "/",
         },
-          lead,
           chev,
           h("span", { class: "tree-folder-icon", ariaHidden: "true" }),
           h("span", { class: "diff-tree-name" }, dir.name + "/"),
         );
         const childWrap = h("div", { class: "diff-tree-children" });
-        dirRow.addEventListener("click", () => {
+        dirRow.addEventListener("click", (e) => {
+          if (onDirPick && (e.metaKey || e.ctrlKey || e.shiftKey)) {
+            onDirPick(dirFiles, dirRow, e);
+            return;
+          }
           const collapsed = childWrap.classList.toggle("is-collapsed");
           dirRow.classList.toggle("is-collapsed", collapsed);
           chev.textContent = collapsed ? "▸" : "▾";
@@ -714,9 +728,9 @@
         const inner = renderRow(f, depth);
         const statusCls = f.code ? " status-" + gmStatusClass(f.code) : "";
         const row = h("button", {
-          class: "diff-tree-row diff-tree-file" + statusCls,
+          class: "diff-tree-row diff-tree-file" + statusCls + (rowClassFor(f) ? " " + rowClassFor(f) : ""),
           style: { paddingLeft: (depth * 12 + 10) + "px" },
-          onClick: () => onPick(f, row),
+          onClick: (e) => onPick(f, row, e),
         }, ...(Array.isArray(inner) ? inner : [inner]));
         row.dataset.path = f.path;
         row.dataset.key = opts.keyFor ? opts.keyFor(f) : f.path;
@@ -863,6 +877,7 @@
     let lastDiffSource = null;  // "staged" | "unstaged" | "untracked"
     let caretPos = null;        // caret offset to restore after a filter re-render
     const selectedStatus = new Set();
+    let lastSelectedStatusKey = null;
 
     async function loadStatus() {
       const r = await git("status --porcelain=v2");
@@ -1180,6 +1195,7 @@
       for (const f of status.staged || []) live.add(statusKey("staged", f));
       for (const f of status.unstaged || []) live.add(statusKey(f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged", f));
       for (const key of [...selectedStatus]) if (!live.has(key)) selectedStatus.delete(key);
+      if (lastSelectedStatusKey && !live.has(lastSelectedStatusKey)) lastSelectedStatusKey = null;
     }
 
     async function selectFile(file, source, diffNode) {
@@ -1187,7 +1203,7 @@
       lastDiffPath = file?.path;
       lastDiffSource = source;
       document.querySelectorAll('.pane[data-pane="status"] .diff-tree-file').forEach((row) => {
-        row.classList.toggle("is-selected", row.dataset.key === state.selectedFile);
+        row.classList.toggle("is-active", row.dataset.key === state.selectedFile);
       });
       if (!file) {
         diffNode.innerHTML = '<div class="status-diff-empty">Select a file to preview the diff.</div>';
@@ -1327,6 +1343,43 @@
       for (const f of status.unstaged || []) add(f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged", f);
       return out;
     }
+
+    function applyStatusSelection(key, event, visibleKeys) {
+      const multi = event && (event.metaKey || event.ctrlKey);
+      const range = event && event.shiftKey && lastSelectedStatusKey && visibleKeys.includes(lastSelectedStatusKey);
+      if (range) {
+        const a = visibleKeys.indexOf(lastSelectedStatusKey);
+        const b = visibleKeys.indexOf(key);
+        if (b !== -1) {
+          const lo = Math.min(a, b), hi = Math.max(a, b);
+          for (let i = lo; i <= hi; i++) selectedStatus.add(visibleKeys[i]);
+        }
+      } else if (multi) {
+        if (selectedStatus.has(key)) selectedStatus.delete(key);
+        else selectedStatus.add(key);
+        lastSelectedStatusKey = key;
+      } else {
+        selectedStatus.clear();
+        selectedStatus.add(key);
+        lastSelectedStatusKey = key;
+      }
+    }
+
+    function toggleFolderSelection(files, sourceFor, event, visibleKeys) {
+      const keys = files.map((f) => statusKey(sourceFor(f), f));
+      if (!keys.length) return;
+      if (event && event.shiftKey && lastSelectedStatusKey && visibleKeys.includes(lastSelectedStatusKey)) {
+        const target = keys[keys.length - 1];
+        applyStatusSelection(target, event, visibleKeys);
+        return;
+      }
+      const allSelected = keys.every((k) => selectedStatus.has(k));
+      for (const key of keys) {
+        if (allSelected) selectedStatus.delete(key);
+        else selectedStatus.add(key);
+      }
+      lastSelectedStatusKey = keys[keys.length - 1];
+    }
     async function commit() {
       const msg = state.commitMsg.trim();
       if (!state.commitAmend && !msg) { ui.toast("Commit message required", "error"); return; }
@@ -1349,25 +1402,11 @@
     function statusTreeRow(file, source, diffNode, filter) {
       const isStaged = source === "staged";
       const isSubmodule = source === "submodule";
-      const key = statusKey(source, file);
       const statusText = file.untracked ? "new" : file.code;
       const statusTitle = file.submodule
         ? "Submodule: " + (file.submoduleSummary || "dirty")
         : file.untracked ? "Untracked" : "";
       return [
-        h("input", {
-          type: "checkbox",
-          class: "status-check",
-          checked: selectedStatus.has(key),
-          title: "Select " + file.path,
-          onChange: (e) => {
-            e.stopPropagation();
-            if (e.target.checked) selectedStatus.add(key);
-            else selectedStatus.delete(key);
-            render();
-          },
-          onClick: (e) => e.stopPropagation(),
-        }),
         gmFileIcon(file.path),
         h("span", { class: "file-status status-" + gmStatusClass(file.code), title: statusTitle }, statusText),
         h("span", { class: "file-name", title: file.path,
@@ -1379,28 +1418,6 @@
           !isStaged && h("button", { class: "row-action danger", onClick: (e) => { e.stopPropagation(); discard(file); } }, "discard"),
         ),
       ];
-    }
-
-    function statusDirCheckbox(files, sourceFor) {
-      const keys = files.map((f) => statusKey(sourceFor(f), f));
-      const checkedCount = keys.filter((k) => selectedStatus.has(k)).length;
-      const checkbox = h("input", {
-        type: "checkbox",
-        class: "status-check status-dir-check",
-        checked: keys.length > 0 && checkedCount === keys.length,
-        title: "Select folder",
-        onChange: (e) => {
-          e.stopPropagation();
-          for (const key of keys) {
-            if (e.target.checked) selectedStatus.add(key);
-            else selectedStatus.delete(key);
-          }
-          render();
-        },
-        onClick: (e) => e.stopPropagation(),
-      });
-      checkbox.indeterminate = checkedCount > 0 && checkedCount < keys.length;
-      return checkbox;
     }
 
     async function render() {
@@ -1421,6 +1438,10 @@
       const match = (f) => !filter || f.path.toLowerCase().includes(filter);
       const staged = status.staged.filter(match);
       const unstaged = status.unstaged.filter(match);
+      const visibleStatusKeys = [
+        ...staged.map((f) => statusKey("staged", f)),
+        ...unstaged.map((f) => statusKey(f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged", f)),
+      ];
 
       // ─── Toolbar ──────────────────────────────────────────────────────
       const filterInput = h("input", {
@@ -1431,9 +1452,6 @@
       });
       const toolbar = h("div", { class: "status-toolbar" },
         filterInput,
-        h("button", { class: "btn-ghost", onClick: stageAll, disabled: unstaged.length === 0 }, "Stage all"),
-        h("button", { class: "btn-ghost", onClick: unstageAll, disabled: staged.length === 0 }, "Unstage all"),
-        h("button", { class: "btn-ghost danger", onClick: () => discardStatusEntries(statusEntriesFrom(status), "all changes"), disabled: status.staged.length + status.unstaged.length === 0 }, "Discard all"),
         h("div", { style: { flex: "1" } }),
         // View toggle: unified diff is one column with +/- prefixes; split
         // shows the old/new sides in two columns so paired changes line up.
@@ -1466,10 +1484,11 @@
 
       const list = h("div", { class: "status-list" });
 
-      function appendSection(label, items, sourceFor) {
+      function appendSection(label, items, sourceFor, actions) {
         list.append(h("div", { class: "file-section-title" },
-          label,
+          h("span", null, label),
           h("span", { class: "count" }, String(items.length)),
+          h("span", { class: "section-actions" }, ...(actions || [])),
         ));
         if (items.length === 0) {
           list.append(h("div", { class: "empty-files" },
@@ -1479,21 +1498,32 @@
         }
         gmRenderFileTree(list, items, {
           keyFor: (f) => `${sourceFor(f)}:${f.path}`,
-          renderDirLead: (_dir, files) => statusDirCheckbox(files, sourceFor),
+          rowClassFor: (f) => {
+            const key = statusKey(sourceFor(f), f);
+            return (selectedStatus.has(key) ? "is-selected " : "") + (state.selectedFile === key ? "is-active" : "");
+          },
+          onDirPick: (files, _row, e) => {
+            toggleFolderSelection(files, sourceFor, e, visibleStatusKeys);
+            render();
+          },
           renderRow: (f, _depth) => statusTreeRow(f, sourceFor(f), diffNode, filter),
-          onPick: (f, row) => {
+          onPick: (f, row, e) => {
             const source = sourceFor(f);
             const key = `${source}:${f.path}`;
+            applyStatusSelection(key, e, visibleStatusKeys);
             state.selectedFile = key;
-            document.querySelectorAll(".diff-tree-file.is-selected").forEach((r) => r.classList.remove("is-selected"));
-            row.classList.add("is-selected");
-            selectFile(f, source, diffNode);
+            render();
           },
         });
       }
 
-      appendSection("Staged", staged, () => "staged");
-      appendSection("Changes", unstaged, (f) => f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged");
+      appendSection("Staged", staged, () => "staged", [
+        h("button", { class: "act-all", onClick: unstageAll, disabled: staged.length === 0 }, "Unstage all"),
+      ]);
+      appendSection("Changes", unstaged, (f) => f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged", [
+        h("button", { class: "act-all", onClick: stageAll, disabled: unstaged.length === 0 }, "Stage all"),
+        h("button", { class: "act-all danger", onClick: () => discardStatusEntries(statusEntriesFrom({ staged: [], unstaged: status.unstaged }), "all changes"), disabled: status.unstaged.length === 0 }, "Discard all"),
+      ]);
 
       const split = h("div", { class: "status-split" }, list, diffNode);
       node.append(split);

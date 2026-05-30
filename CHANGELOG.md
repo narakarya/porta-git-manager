@@ -4,6 +4,15 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.14] — 2026-05-30
+
+### Changed
+- **Status selection now behaves more like an editor file list.** File rows use click selection, Cmd/Ctrl-click toggles rows, Shift-click selects ranges, and Cmd/Ctrl-click on folders selects nested files without permanent checkboxes.
+- **Status section actions moved closer to their context.** `Unstage all` now lives on the Staged header, while `Stage all` and `Discard all` live on the Changes header.
+
+### Fixed
+- **Diff modal loading shimmer fills wide screens.** The loading skeleton now mirrors the final modal layout with a file-tree placeholder on the left and full-width diff placeholders on the right.
+
 ## [0.7.13] — 2026-05-30
 
 ### Added
