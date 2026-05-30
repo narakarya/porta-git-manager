@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.26] — 2026-05-30
+
+### Fixed
+- **Image previews work with macOS `base64`.** The preview loader now passes the image path via `base64 -i`, matching BSD base64's required input-file flag.
+
 ## [0.7.25] — 2026-05-30
 
 ### Added

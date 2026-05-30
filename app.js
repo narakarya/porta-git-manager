@@ -1083,7 +1083,7 @@
       if (!kind || String(path || "").endsWith("/")) return null;
       if (kind === "image") {
         const mime = imageMime(path);
-        const r = await sh("base64 " + quote(path));
+        const r = await sh("base64 -i " + quote(path));
         if (r.code !== 0 || !r.stdout) {
           return {
             kind,
