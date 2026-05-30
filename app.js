@@ -757,8 +757,11 @@
   /** Return an <svg.ficon> referencing the appropriate sprite symbol by file extension. */
   function gmFileIcon(path) {
     const ext = (path || "").split(".").pop().toLowerCase();
-    const known = ["ts", "tsx", "js", "jsx", "json", "css", "html", "md", "rs", "py", "sh"];
-    const id = known.includes(ext) ? "ficon-" + ext : "ficon-generic";
+    // Map sibling/template extensions onto their canonical language glyph.
+    const alias = { exs: "ex", heex: "ex", eex: "ex", erb: "rb", rake: "rb" };
+    const key = alias[ext] || ext;
+    const known = ["ts", "tsx", "js", "jsx", "json", "css", "html", "md", "rs", "py", "sh", "ex", "rb"];
+    const id = known.includes(key) ? "ficon-" + key : "ficon-generic";
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", "ficon");
     svg.setAttribute("viewBox", "0 0 14 14");

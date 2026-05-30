@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.17] — 2026-05-30
+
+### Added
+- **Elixir and Ruby file-type icons.** The file tree now shows the brand logos for `.ex`/`.exs`/`.heex`/`.eex` (Elixir) and `.rb`/`.erb`/`.rake` (Ruby), sourced from Devicon.
+
 ## [0.7.16] — 2026-05-30
 
 ### Fixed
