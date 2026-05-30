@@ -1,1 +1,15 @@
-{ "type": "commonjs" }
+{
+  "name": "porta-git-manager",
+  "version": "0.6.3",
+  "private": true,
+  "type": "commonjs",
+  "description": "Git GUI extension for Porta.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/narakarya/porta-git-manager.git"
+  },
+  "license": "MIT"
+}
