@@ -1,8 +1,8 @@
 {
   "id": "git-manager",
   "name": "Git Manager",
-  "version": "0.6.3",
-  "description": "Status, stage, commit, branches, sync, rebase, and stash — all from the app card.",
+  "version": "0.7.0",
+  "description": "Status, stage, commit, branches, sync, rebase, stash, tags, and GitHub PRs — all from the app card.",
   "author": "Porta",
   "activateOn": ["app:root:*"],
   "permissions": ["shell"],

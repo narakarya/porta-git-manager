@@ -14,6 +14,24 @@ pure HTML + JS + CSS that talks to Porta via `window.portaBridge`.
 | **Rebase** | Pick a target ref, choose pick/squash/fixup/drop per commit, reorder with ↑↓, abort/continue when paused. |
 | **Stash** | List, save (with message + include-untracked toggle), apply, pop, drop. Rows show the **branch chip + relative time**, parsed from the stash message *(new in 0.6.0)*. **View changes (tree-style diff viewer) and checkbox multi-select bulk drop** *(new in 0.6.2)*. |
 | **Tags** *(new in 0.3.0)* | Create lightweight or annotated tags, push to origin, delete locally, delete on origin. Filter input for finding among many. |
+| **PR** *(new in 0.7.0)* | GitHub PRs via the `gh` CLI: list open PRs with check-rollup / review / draft badges, split detail view, create PR from the current branch, view the PR diff in the tree viewer, run checks inline, checkout, squash-merge, open in browser. |
+
+## PR tab (0.7.0)
+
+GitHub pull requests via the `gh` CLI (requires `gh` installed + `gh auth login`;
+falls back to a hint if not). Tab **8** / press `8`.
+
+- **List** open PRs (`gh pr list --json …`) with per-row badges: draft,
+  check-rollup (passed / N failing / N pending), and review decision
+  (approved / changes requested / review required), plus head branch and
+  relative update time. Filter box re-filters client-side (no re-fetch).
+- **Detail** (`gh pr view --json …`) in a split pane: title, base ← head,
+  diffstat, author, an **inline checks list**, and the PR description.
+- **Create PR** from the current branch — inline title + body form, base is the
+  repo default branch; blank title uses `gh pr create --fill`.
+- **Actions**: View diff (`gh pr diff` → the tree diff viewer), Checkout
+  (`gh pr checkout`), Open in browser (`gh pr view --web`), and a confirmed
+  **Squash & merge** (`gh pr merge --squash --delete-branch`).
 
 ## Branch facets + tab polish (0.6.3)
 

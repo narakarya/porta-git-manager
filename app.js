@@ -458,7 +458,7 @@
   }
 
   async function renderActiveTab() {
-    const map = { status: statusTab, branches: branchesTab, sync: syncTab, history: historyTab, rebase: rebaseTab, stash: stashTab, tags: tagsTab };
+    const map = { status: statusTab, branches: branchesTab, sync: syncTab, history: historyTab, rebase: rebaseTab, stash: stashTab, tags: tagsTab, pr: prTab };
     const tab = map[state.currentTab];
     if (tab) await tab.render();
   }
@@ -2110,6 +2110,299 @@
     return { render };
   })();
 
+  // ── PR tab (GitHub via gh CLI) ───────────────────────────────────────────
+  const prTab = (() => {
+    const pane = () => document.querySelector('.pane[data-pane="pr"]');
+    let prs = [];
+    let selected = null;     // selected PR number
+    let creating = false;
+    let newTitle = "", newBody = "";
+    let baseBranch = null;   // repo default branch, cached
+    let filter = "";
+    let ghOk = null;         // cached once gh auth verified
+    let listEl = null, detailEl = null; // live nodes for client-side re-paint
+
+    function gh(args, opts) { return sh("gh " + args, opts || {}); }
+
+    // Normalize one statusCheckRollup entry into {name, kind, url}.
+    function checkInfo(c) {
+      const name = c.name || c.context || "check";
+      const concl = (c.conclusion || c.state || "").toUpperCase();
+      const status = (c.status || "").toUpperCase();
+      let kind;
+      if (["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"].includes(concl)) kind = "fail";
+      else if (concl === "SUCCESS") kind = "pass";
+      else if (["NEUTRAL", "SKIPPED"].includes(concl)) kind = "skip";
+      else if (status && status !== "COMPLETED") kind = "pending";
+      else if (concl === "PENDING" || !concl) kind = "pending";
+      else kind = "pass";
+      return { name, kind, url: c.detailsUrl || c.targetUrl || "" };
+    }
+
+    // Roll a check list up to one overall {kind, label}.
+    function rollup(checks) {
+      if (!checks || !checks.length) return null;
+      let fail = 0, pend = 0, pass = 0;
+      for (const c of checks) {
+        const k = checkInfo(c).kind;
+        if (k === "fail") fail++; else if (k === "pending") pend++; else pass++;
+      }
+      if (fail) return { kind: "fail", label: fail + " failing" };
+      if (pend) return { kind: "pending", label: pend + " pending" };
+      return { kind: "pass", label: "checks passed" };
+    }
+
+    function reviewBadge(decision) {
+      switch (decision) {
+        case "APPROVED": return h("span", { class: "pr-tag is-approved" }, "approved");
+        case "CHANGES_REQUESTED": return h("span", { class: "pr-tag is-changes" }, "changes requested");
+        case "REVIEW_REQUIRED": return h("span", { class: "pr-tag is-review" }, "review required");
+        default: return null;
+      }
+    }
+
+    function checksBadge(checks) {
+      const r = rollup(checks);
+      if (!r) return null;
+      return h("span", { class: "pr-tag is-check-" + r.kind }, r.label);
+    }
+
+    function relTime(iso) {
+      if (!iso) return "";
+      const then = new Date(iso).getTime();
+      if (!then) return "";
+      const s = Math.max(1, Math.round((Date.now() - then) / 1000));
+      const u = [[31536000, "y"], [2592000, "mo"], [604800, "w"], [86400, "d"], [3600, "h"], [60, "m"]];
+      for (const [secs, label] of u) if (s >= secs) return Math.floor(s / secs) + label + " ago";
+      return s + "s ago";
+    }
+
+    async function probeGh() {
+      const r = await gh("auth status");
+      return r.code === 0;
+    }
+
+    async function loadBase() {
+      if (baseBranch) return baseBranch;
+      const r = await gh("repo view --json defaultBranchRef -q .defaultBranchRef.name");
+      baseBranch = r.code === 0 ? (r.stdout.trim() || "main") : "main";
+      return baseBranch;
+    }
+
+    async function loadPRs() {
+      const fields = "number,title,headRefName,baseRefName,author,isDraft,reviewDecision,statusCheckRollup,url,updatedAt,additions,deletions";
+      const r = await gh("pr list --state open --limit 50 --json " + fields);
+      if (r.code !== 0) return { error: r.stderr || "gh pr list failed" };
+      try { return { prs: JSON.parse(r.stdout || "[]") }; }
+      catch (_) { return { error: "Could not parse gh output" }; }
+    }
+
+    function setBadge() {
+      const b = document.getElementById("badge-pr");
+      if (!b) return;
+      if (prs.length) { b.textContent = String(prs.length); b.classList.add("show"); }
+      else b.classList.remove("show");
+    }
+
+    // ── Actions ─────────────────────────────────────────────────────────────
+    async function create() {
+      const head = state.branch;
+      if (!head || head.startsWith("(")) { ui.toast("Not on a named branch", "error"); return; }
+      const base = await loadBase();
+      if (head === base) { ui.toast("You're on the base branch (" + base + ")", "error"); return; }
+      const title = newTitle.trim();
+      let args = "pr create --base " + quote(base) + " --head " + quote(head);
+      if (title) args += " --title " + quote(title) + " --body " + quote(newBody.trim());
+      else args += " --fill";
+      const r = await gh(args, { timeout: 90000 });
+      if (r.code === 0) {
+        ui.toast("PR created", "success");
+        creating = false; newTitle = ""; newBody = "";
+        await render();
+      } else ui.toast(r.stderr || "Create PR failed (is the branch pushed?)", "error", 7000);
+    }
+
+    async function viewDiff(num) {
+      const r = await gh("pr diff " + num + " --color never");
+      if (r.code !== 0) { ui.toast(r.stderr || "Could not load PR diff", "error", 5000); return; }
+      const files = gmParseDiffDoc(r.stdout);
+      if (!files.length) { ui.toast("PR has no diff", "info"); return; }
+      await ui.diffModal({ title: "PR #" + num + " diff", subtitle: files.length + " file(s) changed", files });
+    }
+
+    async function checkout(num) {
+      const r = await gh("pr checkout " + num, { timeout: 60000 });
+      if (r.code === 0) { ui.toast("Checked out PR #" + num, "success"); await refresh(); }
+      else ui.toast(r.stderr || "Checkout failed", "error", 5000);
+    }
+
+    async function openWeb(num) {
+      const r = await gh("pr view " + num + " --web");
+      if (r.code !== 0) ui.toast(r.stderr || "Could not open browser", "error", 5000);
+    }
+
+    async function merge(pr) {
+      const ok = await ui.confirm({
+        title: "Merge PR #" + pr.number + "?",
+        body: `Squash-merge "${pr.title}" into ${pr.baseRefName} and delete the head branch. This can't be undone from here.`,
+        danger: true, okLabel: "Squash & merge",
+      });
+      if (!ok) return;
+      const r = await gh("pr merge " + pr.number + " --squash --delete-branch", { timeout: 90000 });
+      if (r.code === 0) { ui.toast("Merged PR #" + pr.number, "success"); selected = null; await refresh(); }
+      else ui.toast(r.stderr || "Merge failed", "error", 7000);
+    }
+
+    // ── Detail pane ─────────────────────────────────────────────────────────
+    async function renderDetail(node, num) {
+      node.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
+      const fields = "number,title,body,state,isDraft,headRefName,baseRefName,author,reviewDecision,statusCheckRollup,url,additions,deletions,mergeable,labels";
+      const r = await gh("pr view " + num + " --json " + fields);
+      if (selected !== num) return; // user moved on
+      if (r.code !== 0) { node.innerHTML = ""; node.append(h("div", { class: "history-detail-empty" }, r.stderr || "Could not load PR")); return; }
+      let pr;
+      try { pr = JSON.parse(r.stdout); } catch (_) { node.innerHTML = ""; node.append(h("div", { class: "history-detail-empty" }, "Parse error")); return; }
+      node.innerHTML = "";
+
+      node.append(h("div", { class: "pr-detail-head" },
+        h("div", { class: "pr-detail-title" },
+          h("span", { class: "pr-num" }, "#" + pr.number),
+          h("span", null, pr.title),
+        ),
+        h("div", { class: "pr-detail-meta" },
+          pr.isDraft && h("span", { class: "pr-tag is-draft" }, "draft"),
+          reviewBadge(pr.reviewDecision),
+          checksBadge(pr.statusCheckRollup),
+          h("span", { class: "pr-branches" }, pr.baseRefName + " ← " + pr.headRefName),
+          h("span", { class: "pr-diffstat" }, h("span", { class: "stat-add" }, "+" + (pr.additions || 0)), " ", h("span", { class: "stat-del" }, "−" + (pr.deletions || 0))),
+          pr.author && h("span", { class: "pr-author" }, "@" + (pr.author.login || pr.author.name || "")),
+        ),
+      ));
+
+      node.append(h("div", { class: "pr-actions" },
+        h("button", { class: "btn-mini", onClick: () => viewDiff(pr.number) }, "View diff"),
+        h("button", { class: "btn-mini", onClick: () => checkout(pr.number) }, "Checkout"),
+        h("button", { class: "btn-mini", onClick: () => openWeb(pr.number) }, "Open in browser"),
+        h("button", { class: "btn-mini danger", onClick: () => merge(pr) }, "Squash & merge"),
+      ));
+
+      // Checks list
+      const checks = (pr.statusCheckRollup || []).map(checkInfo);
+      if (checks.length) {
+        const cl = h("div", { class: "pr-checks" });
+        for (const c of checks) {
+          cl.append(h("div", { class: "pr-check-row" },
+            h("span", { class: "pr-check-dot is-" + c.kind }),
+            h("span", { class: "pr-check-name" }, c.name),
+            h("span", { class: "pr-check-kind" }, c.kind),
+          ));
+        }
+        node.append(h("div", { class: "pr-section-title" }, "Checks"), cl);
+      }
+
+      // Body
+      node.append(h("div", { class: "pr-section-title" }, "Description"));
+      node.append(h("div", { class: "pr-body" }, pr.body ? pr.body : "(no description)"));
+    }
+
+    // Client-side re-paint of the PR list from cached `prs` + filter — used by
+    // the filter box and row selection so a keystroke never re-hits gh.
+    function paintList() {
+      if (!listEl) return;
+      const f = filter.toLowerCase();
+      const visible = prs.filter((p) => !f || p.title.toLowerCase().includes(f) || String(p.number).includes(f) || (p.headRefName || "").toLowerCase().includes(f));
+      listEl.innerHTML = "";
+      if (visible.length === 0) {
+        listEl.append(h("div", { class: "empty-files" }, prs.length === 0 ? "No open PRs" : "No PRs match"));
+        return;
+      }
+      for (const p of visible) {
+        const row = h("button", { class: "pr-row" + (selected === p.number ? " is-selected" : ""),
+          onClick: () => { selected = p.number; paintList(); renderDetail(detailEl, p.number); } },
+          h("div", { class: "pr-row-top" },
+            h("span", { class: "pr-num" }, "#" + p.number),
+            h("span", { class: "pr-row-title", title: p.title }, p.title),
+          ),
+          h("div", { class: "pr-row-sub" },
+            p.isDraft && h("span", { class: "pr-tag is-draft" }, "draft"),
+            checksBadge(p.statusCheckRollup),
+            reviewBadge(p.reviewDecision),
+            h("span", { class: "pr-row-branch", title: p.headRefName }, p.headRefName),
+            h("span", { class: "pr-row-when" }, relTime(p.updatedAt)),
+          ),
+        );
+        listEl.append(row);
+      }
+    }
+
+    // ── Render ──────────────────────────────────────────────────────────────
+    async function render() {
+      const node = pane();
+      node.innerHTML = "";
+      node.className = "pane is-active pr-pane";
+      listEl = detailEl = null;
+
+      // Cache a successful auth check; keep retrying while it fails.
+      if (ghOk !== true) ghOk = await probeGh();
+      if (!ghOk) {
+        node.append(h("div", { class: "empty-files", style: { padding: "24px", lineHeight: "1.6" } },
+          "GitHub CLI not available or not authenticated.",
+          h("div", { style: { marginTop: "8px", color: "var(--text-dim)" } }, "Install gh and run `gh auth login`, then refresh."),
+        ));
+        return;
+      }
+
+      // Create form (inline) ──────────────────────────────────────────────
+      if (creating) {
+        const base = await loadBase();
+        const titleInput = h("input", { class: "input", placeholder: "PR title (blank = fill from commits)",
+          value: newTitle, onInput: (e) => { newTitle = e.target.value; } });
+        const bodyInput = h("textarea", { class: "input", rows: 5, placeholder: "Description (optional)",
+          style: { resize: "vertical", fontFamily: "inherit" }, value: newBody, onInput: (e) => { newBody = e.target.value; } });
+        node.append(h("div", { class: "pr-create" },
+          h("div", { class: "pr-create-head" },
+            h("span", null, "New PR: ", h("strong", null, state.branch || "?"), " → ", h("strong", null, base)),
+          ),
+          titleInput, bodyInput,
+          h("div", { class: "pr-create-actions" },
+            h("button", { class: "btn-ghost", onClick: () => { creating = false; render(); } }, "Cancel"),
+            h("button", { class: "btn-primary", onClick: create }, "Create PR"),
+          ),
+        ));
+        return;
+      }
+
+      // Top bar — filter re-paints the list client-side (input never rebuilt).
+      const filterInput = h("input", {
+        class: "history-search", placeholder: "Filter PRs…", value: filter,
+        onInput: (e) => { filter = e.target.value; paintList(); },
+      });
+      node.append(h("div", { class: "pr-top" },
+        filterInput,
+        h("div", { style: { flex: "1" } }),
+        h("button", { class: "btn-primary", onClick: () => { creating = true; newTitle = ""; newBody = ""; render(); } }, "New PR"),
+      ));
+
+      listEl = h("div", { class: "pr-list" });
+      detailEl = h("div", { class: "pr-detail" });
+      detailEl.innerHTML = '<div class="history-detail-empty">Pick a PR to inspect.</div>';
+      node.append(h("div", { class: "pr-split" }, listEl, detailEl));
+
+      listEl.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
+      const res = await loadPRs();
+      if (res.error) { listEl.innerHTML = ""; listEl.append(h("div", { class: "empty-files" }, res.error)); return; }
+      prs = res.prs;
+      setBadge();
+      // Drop a stale selection if that PR is no longer open.
+      if (selected != null && !prs.some((p) => p.number === selected)) selected = null;
+
+      paintList();
+      if (selected != null) await renderDetail(detailEl, selected);
+    }
+
+    return { render };
+  })();
+
   // ── No-repo bootstrap ────────────────────────────────────────────────────
   async function renderNoRepo() {
     const panes = $(".panes");
@@ -2199,8 +2492,8 @@
       // Don't fight Cmd/Ctrl + key — those are reserved for browser/host.
       if (e.metaKey || e.ctrlKey) return;
       const k = e.key.toLowerCase();
-      if (["1", "2", "3", "4", "5", "6", "7"].includes(k)) {
-        const tab = ["status", "branches", "sync", "history", "rebase", "stash", "tags"][parseInt(k, 10) - 1];
+      if (["1", "2", "3", "4", "5", "6", "7", "8"].includes(k)) {
+        const tab = ["status", "branches", "sync", "history", "rebase", "stash", "tags", "pr"][parseInt(k, 10) - 1];
         e.preventDefault();
         activateTab(tab);
       } else if (k === "r") {
