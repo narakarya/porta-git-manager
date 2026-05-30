@@ -222,7 +222,9 @@
           );
           activeRow = allRow;
           nav.append(allRow);
-          gmRenderTreeNav(nav, gmFileTree(files), 0, (f, row) => { setActive(row); showList([f]); });
+          gmRenderFileTree(nav, files, {
+            onPick: (f, row) => { setActive(row); showList([f]); },
+          });
           main = h("div", { class: "diff-modal-main" }, nav, content);
         } else {
           main = h("div", { class: "diff-modal-main is-single" }, content);
@@ -343,23 +345,56 @@
   const gmFileTree = window.GMTree.fileTree;
   const gmFilterFiles = window.GMTree.filterFiles;
 
-  /** Render a file tree into `nav`; `onPick(file, rowEl)` fires on file click. */
-  function gmRenderTreeNav(nav, node, depth, onPick) {
-    for (const dir of node.dirs.values()) {
-      nav.append(h("div", { class: "diff-tree-row diff-tree-dir", style: { paddingLeft: (depth * 12 + 10) + "px" }, title: dir.name }, dir.name + "/"));
-      gmRenderTreeNav(nav, dir, depth + 1, onPick);
+  /**
+   * Render a file tree into `nav`. The data layer (`gmFileTree`) builds
+   * the nested structure; this function walks it. Per-row rendering is
+   * delegated so callers can produce different row contents (diff modal
+   * shows +/- stats; Status tab shows status letters + per-file actions).
+   *
+   * opts = {
+   *   depth?: number,                  // initial padding depth (default 0)
+   *   onPick(file, rowEl): void,       // file click handler
+   *   renderRow(file, depth): Node,    // builds and returns the file row inner content;
+   *                                    // MUST NOT attach its own click handler
+   *                                    // (we attach onPick to the wrapper button)
+   * }
+   */
+  function gmRenderFileTree(nav, files, opts) {
+    const node = gmFileTree(files);
+    const onPick = opts.onPick || (() => {});
+    const renderRow = opts.renderRow || defaultDiffRow;
+    walk(node, opts.depth || 0);
+
+    function walk(n, depth) {
+      for (const dir of n.dirs.values()) {
+        nav.append(h("div", {
+          class: "diff-tree-row diff-tree-dir",
+          style: { paddingLeft: (depth * 12 + 10) + "px" },
+          title: dir.name,
+        }, dir.name + "/"));
+        walk(dir, depth + 1);
+      }
+      for (const f of n.files) {
+        const inner = renderRow(f, depth);
+        const row = h("button", {
+          class: "diff-tree-row diff-tree-file",
+          style: { paddingLeft: (depth * 12 + 10) + "px" },
+          onClick: () => onPick(f, row),
+        }, ...(Array.isArray(inner) ? inner : [inner]));
+        nav.append(row);
+      }
     }
-    for (const f of node.files) {
-      const st = gmFileStats(f);
-      const row = h("button", { class: "diff-tree-row diff-tree-file", style: { paddingLeft: (depth * 12 + 10) + "px" },
-        onClick: () => onPick(f, row) },
-        h("span", { class: "diff-tree-name", title: f.path }, f._name),
-        h("span", { class: "diff-tree-stat" },
-          st.add ? h("span", { class: "stat-add" }, "+" + st.add) : null,
-          st.del ? h("span", { class: "stat-del" }, "−" + st.del) : null),
-      );
-      nav.append(row);
-    }
+  }
+
+  /** Default row renderer — matches the previous diff modal look (+/- pills). */
+  function defaultDiffRow(f) {
+    const st = gmFileStats(f);
+    return [
+      h("span", { class: "diff-tree-name", title: f.path }, f._name),
+      h("span", { class: "diff-tree-stat" },
+        st.add ? h("span", { class: "stat-add" }, "+" + st.add) : null,
+        st.del ? h("span", { class: "stat-del" }, "−" + st.del) : null),
+    ];
   }
 
   // ── Top-bar branch chip / badges ─────────────────────────────────────────
