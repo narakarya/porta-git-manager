@@ -598,40 +598,45 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
   user-select: none;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding-top: 3px;
-  padding-bottom: 3px;
-  font-size: 11px;
+  gap: 7px;
+  min-height: 25px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  font-size: 12px;
   color: var(--text-mute);
 }
 .diff-tree-dir:hover { background: var(--bg-hover); color: var(--text); }
 .diff-tree-dir .tree-chev {
-  font-size: 9px;
-  width: 12px;
+  font-size: 10px;
+  width: 10px;
   text-align: center;
   flex-shrink: 0;
   opacity: 0.7;
 }
 .diff-tree-dir:hover .tree-chev { opacity: 1; }
 .tree-folder-icon {
-  width: 13px;
-  height: 10px;
-  flex: 0 0 13px;
+  width: 15px;
+  height: 11px;
+  flex: 0 0 15px;
   border: 1px solid currentColor;
-  border-radius: 2px;
-  opacity: 0.7;
+  border-radius: 2px 2px 2px 2px;
+  background: rgba(96, 165, 250, 0.12);
+  color: var(--blue);
+  opacity: 0.72;
   position: relative;
+  margin-top: 2px;
 }
 .tree-folder-icon::before {
   content: "";
   position: absolute;
   left: 1px;
   top: -4px;
-  width: 6px;
+  width: 7px;
   height: 4px;
   border: 1px solid currentColor;
   border-bottom: 0;
   border-radius: 2px 2px 0 0;
+  background: var(--bg-pane);
 }
 .diff-tree-dir:hover .tree-folder-icon,
 .diff-tree-dir.is-collapsed .tree-folder-icon { opacity: 1; }
@@ -1307,24 +1312,37 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
 .diff-tree-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   width: 100%;
   text-align: left;
   font-size: 12px;
-  padding: 3px 10px;
+  min-height: 25px;
+  padding: 2px 10px;
   border: 0;
   background: transparent;
   color: var(--text-mute);
 }
-.diff-tree-dir { color: var(--text-dim); font-size: 11px; cursor: pointer; }
+.diff-tree-dir { color: var(--text-dim); font-size: 12px; cursor: pointer; }
 .diff-tree-file { cursor: pointer; }
 .diff-tree-file:hover,
 .diff-tree-file:focus-visible { background: var(--bg-hover); color: var(--text); }
 .diff-tree-file:focus-visible { outline: 1px solid rgba(96, 165, 250, 0.45); outline-offset: -1px; }
 .diff-tree-row.is-active { background: rgba(96, 165, 250, 0.14); color: var(--text); }
 .diff-tree-all { font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); margin-bottom: 4px; }
-.diff-tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.diff-tree-stat { flex: none; display: flex; gap: 6px; font-variant-numeric: tabular-nums; }
+.diff-tree-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+.diff-tree-file .diff-tree-name { color: var(--text-mute); font-weight: 500; }
+.diff-tree-file:hover .diff-tree-name,
+.diff-tree-file:focus-visible .diff-tree-name,
+.diff-tree-file.is-active .diff-tree-name,
+.diff-tree-file.is-selected .diff-tree-name { color: var(--text); }
+.diff-tree-stat { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 6px; font-variant-numeric: tabular-nums; }
 .diff-tree-stat .stat-add { color: var(--emerald); }
 .diff-tree-stat .stat-del { color: var(--red); }
 
@@ -1465,10 +1483,11 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .pr-create-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
 .ficon {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
   color: var(--text-mute);
+  opacity: 0.92;
 }
 .diff-tree-file:hover .ficon,
 .diff-tree-file.is-active .ficon,
@@ -1588,11 +1607,14 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .diff-tree-stat {
   margin-left: auto;
   display: flex;
-  gap: 4px;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 50px;
   padding: 0 5px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
   font-size: 10px;
+  line-height: 16px;
 }
 
 .diff-modal-opts { display: flex; gap: 10px; align-items: center; margin-right: 8px; }

@@ -839,10 +839,10 @@
     renderActiveTab();
   }
 
-  async function renderActiveTab() {
+  async function renderActiveTab(opts) {
     const map = { status: statusTab, branches: branchesTab, sync: syncTab, history: historyTab, rebase: rebaseTab, stash: stashTab, tags: tagsTab, pr: prTab };
     const tab = map[state.currentTab];
-    if (tab) await tab.render();
+    if (tab) await tab.render(opts || {});
   }
 
   // ── Status tab ───────────────────────────────────────────────────────────
@@ -1430,6 +1430,7 @@
     let newBranchName = "";
     const selected = new Set(); // branch names ticked for bulk delete
     let facet = "all";          // local-branch facet: all|merged|unmerged|local-only|on-remote
+    let loaded = false;
 
     async function loadBranches() {
       const sep = "\x1f";
@@ -1652,7 +1653,8 @@
 
     // Load + initial paint. The search box lives here so it survives
     // re-paints; only the list region under it is rebuilt on keystrokes.
-    async function render() {
+    async function render(opts) {
+      const force = !!(opts && opts.force);
       const node = pane();
       node.innerHTML = "";
       node.className = "pane is-active branches-pane";
@@ -1681,11 +1683,14 @@
       node.append(top);
       node.append(h("div", { class: "branches-list-wrap" }));
 
-      const { local, remote } = await loadBranches();
-      state.branches = { local, remote };
-      // Drop ticks for branches that no longer exist (e.g. after a delete).
-      const live = new Set([...local, ...remote].map((b) => b.name));
-      for (const n of [...selected]) if (!live.has(n)) selected.delete(n);
+      if (!loaded || force) {
+        const { local, remote } = await loadBranches();
+        state.branches = { local, remote };
+        loaded = true;
+        // Drop ticks for branches that no longer exist (e.g. after a delete).
+        const live = new Set([...local, ...remote].map((b) => b.name));
+        for (const n of [...selected]) if (!live.has(n)) selected.delete(n);
+      }
       paint();
     }
 
@@ -1854,7 +1859,7 @@
       wrap.append(list);
     }
 
-    return { render };
+    return { render, invalidate: () => { loaded = false; } };
   })();
 
   // ── Sync tab ─────────────────────────────────────────────────────────────
@@ -1863,6 +1868,7 @@
     let running = null; // action name currently running, for visual feedback
     let newRemoteName = "";
     let newRemoteUrl = "";
+    let remotesLoaded = false;
 
     async function loadRemotes() {
       const r = await git("remote -v");
@@ -1889,7 +1895,8 @@
         newRemoteName = "";
         newRemoteUrl = "";
         ui.toast("Added remote " + name, "success");
-        await render();
+        remotesLoaded = false;
+        await render({ force: true });
       } else ui.toast(r.stderr || "Add remote failed", "error", 5000);
     }
 
@@ -1903,7 +1910,8 @@
       const r = await git("remote remove " + quote(name));
       if (r.code === 0) ui.toast("Removed " + name, "success");
       else ui.toast(r.stderr || "Remove failed", "error", 5000);
-      await render();
+      remotesLoaded = false;
+      await render({ force: true });
     }
 
     async function renameRemote(oldName) {
@@ -1915,7 +1923,7 @@
       });
       if (!newName || newName === oldName) return;
       const r = await git("remote rename " + quote(oldName) + " " + quote(newName));
-      if (r.code === 0) { ui.toast("Renamed", "success"); await render(); }
+      if (r.code === 0) { ui.toast("Renamed", "success"); remotesLoaded = false; await render({ force: true }); }
       else ui.toast(r.stderr || "Rename failed", "error", 5000);
     }
 
@@ -1929,7 +1937,7 @@
       });
       if (!newUrl || newUrl === currentUrl) return;
       const r = await git("remote set-url " + quote(name) + " " + quote(newUrl));
-      if (r.code === 0) { ui.toast("URL updated", "success"); await render(); }
+      if (r.code === 0) { ui.toast("URL updated", "success"); remotesLoaded = false; await render({ force: true }); }
       else ui.toast(r.stderr || "Update failed", "error", 5000);
     }
 
@@ -1945,7 +1953,6 @@
         ui.toast(r.stderr || `${name} failed`, "error", 5000);
       }
       await refresh();
-      render();
     }
 
     async function pull(rebase) {
@@ -1974,7 +1981,8 @@
       );
     }
 
-    async function render() {
+    async function render(opts) {
+      const force = !!(opts && opts.force);
       const node = pane();
       node.innerHTML = "";
       node.className = "pane is-active sync-pane";
@@ -1994,8 +2002,11 @@
       node.append(summary);
 
       // ─── Remotes section ──────────────────────────────────────────────
-      const remotes = await loadRemotes();
-      state.remotes = remotes;
+      if (!remotesLoaded || force) {
+        state.remotes = await loadRemotes();
+        remotesLoaded = true;
+      }
+      const remotes = state.remotes || [];
       const remotesBox = h("div", { class: "sync-summary" },
         h("div", { class: "label" }, "Remotes"),
       );
@@ -2053,7 +2064,7 @@
       node.append(grid);
     }
 
-    return { render };
+    return { render, invalidate: () => { remotesLoaded = false; } };
   })();
 
   // ── History tab ──────────────────────────────────────────────────────────
@@ -2061,6 +2072,8 @@
     const pane = () => document.querySelector('.pane[data-pane="history"]');
     let caretPos = null; // caret offset to restore after a search re-render
     let lastFiles = []; // parsed files of the most-recently-rendered commit (used by Tasks 17/18)
+    let logCache = new Map(); // filter string -> commits
+    let detailCache = new Map(); // short sha -> rendered detail data
 
     function openInViewer(commit, files) {
       if (!files || !files.length) { ui.toast("No diff to show", "info"); return; }
@@ -2094,52 +2107,38 @@
       });
     }
 
-    async function renderDetail(detailNode, commit) {
-      detailNode.innerHTML = "";
-
-      // Skeleton — structure matches the real layout so the swap doesn't jump.
-      detailNode.append(h("div", { class: "commit-card skel-card" },
-        h("div", { class: "skel skel-line skel-subject" }),
-        h("div", { class: "skel skel-line skel-body" }),
-        h("div", { class: "sep" }),
-        h("div", { class: "skel skel-line skel-meta" }),
-        h("div", { class: "pill-row" },
-          h("div", { class: "skel skel-pill" }),
-          h("div", { class: "skel skel-pill" }),
-        ),
-      ));
-      detailNode.append(h("div", { class: "commit-stat-strip skel-strip" },
-        h("div", { class: "skel skel-line skel-strip-text" }),
-        h("div", { class: "skel skel-bar" }),
-      ));
-      for (let i = 0; i < 5; i++) {
-        detailNode.append(h("div", { class: "skel skel-diff-line" }));
-      }
-
+    async function loadCommitDetail(commit) {
+      if (detailCache.has(commit.sha)) return detailCache.get(commit.sha);
       // Parallel fetches — body, absolute timestamp, and the patch itself.
       const [bodyRes, absRes, showRes] = await Promise.all([
         git("show -s --format=%b " + quote(commit.sha)),
         git("show -s --format=%ai " + quote(commit.sha)),
         git("show --no-color --format= -p " + quote(commit.sha)),
       ]);
+      const detail = {
+        bodyText: (bodyRes.code === 0 ? bodyRes.stdout : "").trimEnd(),
+        absDate: (absRes.code === 0 ? absRes.stdout : "").trim(),
+        files: gmParseDiffDoc(showRes.stdout),
+      };
+      detailCache.set(commit.sha, detail);
+      return detail;
+    }
 
-      // Swap to real DOM in one atomic clear-and-build.
+    function paintCommitDetail(detailNode, commit, detail) {
       detailNode.innerHTML = "";
 
       // ── Card ─────────────────────────────────────────────────────────
       const subject = h("div", { class: "subject" }, commit.msg);
       const card = h("div", { class: "commit-card" }, subject);
 
-      const bodyText = (bodyRes.code === 0 ? bodyRes.stdout : "").trimEnd();
-      if (bodyText) card.append(h("div", { class: "body" }, bodyText));
+      if (detail.bodyText) card.append(h("div", { class: "body" }, detail.bodyText));
 
       card.append(h("div", { class: "sep" }));
 
-      const absDate = (absRes.code === 0 ? absRes.stdout : "").trim();
       card.append(h("div", { class: "meta" },
         h("span", null, commit.author),
         h("span", null, "·"),
-        h("span", { title: absDate }, commit.when),
+        h("span", { title: detail.absDate }, commit.when),
       ));
 
       const parents = (commit.parents || "").split(/\s+/).filter(Boolean);
@@ -2155,8 +2154,9 @@
         pillRow.append(h("span", { class: "parent-label" }, "parent:"));
         pillRow.append(h("span", { class: "commit-sha-pill" }, p));
       }
+      lastFiles = detail.files;
       const viewerBtn = h("button", { class: "btn-mini",
-        onClick: (e) => { e.stopPropagation(); openInViewer(commit, lastFiles); } },
+        onClick: (e) => { e.stopPropagation(); openInViewer(commit, detail.files); } },
         "Open in viewer ↗");
       pillRow.append(viewerBtn);
       card.append(pillRow);
@@ -2164,9 +2164,7 @@
       detailNode.append(card);
 
       // ── Diff + stat strip ────────────────────────────────────────────
-      const files = gmParseDiffDoc(showRes.stdout);
-      lastFiles = files;
-
+      const files = detail.files;
       const totals = files.reduce((acc, f) => {
         const s = gmFileStats(f); acc.add += s.add; acc.del += s.del; return acc;
       }, { add: 0, del: 0 });
@@ -2189,7 +2187,37 @@
       gmRenderDiffDoc(diffWrap, files);
     }
 
-    async function render() {
+    async function renderDetail(detailNode, commit) {
+      if (detailCache.has(commit.sha)) {
+        paintCommitDetail(detailNode, commit, detailCache.get(commit.sha));
+        return;
+      }
+      detailNode.innerHTML = "";
+
+      // Skeleton — structure matches the real layout so the swap doesn't jump.
+      detailNode.append(h("div", { class: "commit-card skel-card" },
+        h("div", { class: "skel skel-line skel-subject" }),
+        h("div", { class: "skel skel-line skel-body" }),
+        h("div", { class: "sep" }),
+        h("div", { class: "skel skel-line skel-meta" }),
+        h("div", { class: "pill-row" },
+          h("div", { class: "skel skel-pill" }),
+          h("div", { class: "skel skel-pill" }),
+        ),
+      ));
+      detailNode.append(h("div", { class: "commit-stat-strip skel-strip" },
+        h("div", { class: "skel skel-line skel-strip-text" }),
+        h("div", { class: "skel skel-bar" }),
+      ));
+      for (let i = 0; i < 5; i++) {
+        detailNode.append(h("div", { class: "skel skel-diff-line" }));
+      }
+
+      paintCommitDetail(detailNode, commit, await loadCommitDetail(commit));
+    }
+
+    async function render(opts) {
+      const force = !!(opts && opts.force);
       const node = pane();
       node.innerHTML = "";
       node.className = "pane is-active history-pane";
@@ -2210,7 +2238,16 @@
       detail.innerHTML = '<div class="history-detail-empty">Pick a commit to inspect.</div>';
       node.append(h("div", { class: "history-split" }, list, detail));
 
-      const commits = await loadLog(state.historyFilter);
+      const cacheKey = state.historyFilter || "";
+      if (force) {
+        logCache.clear();
+        detailCache.clear();
+      }
+      let commits = logCache.get(cacheKey);
+      if (!commits) {
+        commits = await loadLog(state.historyFilter);
+        logCache.set(cacheKey, commits);
+      }
       state.log = commits;
       if (commits.length === 0) {
         list.append(h("div", { class: "empty-files" }, "No commits match"));
@@ -2247,7 +2284,7 @@
     }
 
     let searchTimer = 0;
-    return { render };
+    return { render, invalidate: () => { logCache.clear(); detailCache.clear(); } };
   })();
 
   // ── Rebase tab ───────────────────────────────────────────────────────────
@@ -2441,6 +2478,7 @@
     let msg = "";
     let includeUntracked = false;
     const selectedRefs = new Set(); // stash refs ticked for bulk drop
+    let loaded = false;
 
     async function loadStash() {
       const sep = "\x1f";
@@ -2544,7 +2582,8 @@
       await refresh();
     }
 
-    async function render() {
+    async function render(opts) {
+      const force = !!(opts && opts.force);
       const node = pane();
       node.innerHTML = "";
       node.className = "pane is-active stash-pane";
@@ -2565,13 +2604,16 @@
 
       node.append(h("div", { class: "stash-list-wrap" }));
 
-      const stashes = await loadStash();
-      state.stashes = stashes;
-      state.stashCount = stashes.length;
-      // Drop ticks for stashes that no longer exist.
-      const live = new Set(stashes.map((s) => s.ref));
-      for (const ref of [...selectedRefs]) if (!live.has(ref)) selectedRefs.delete(ref);
-      paintTopBar();
+      if (!loaded || force) {
+        const stashes = await loadStash();
+        state.stashes = stashes;
+        state.stashCount = stashes.length;
+        loaded = true;
+        // Drop ticks for stashes that no longer exist.
+        const live = new Set(stashes.map((s) => s.ref));
+        for (const ref of [...selectedRefs]) if (!live.has(ref)) selectedRefs.delete(ref);
+        paintTopBar();
+      }
       paint();
     }
 
@@ -2632,7 +2674,7 @@
       wrap.append(list);
     }
 
-    return { render };
+    return { render, invalidate: () => { loaded = false; } };
   })();
 
   // ── Tags tab ─────────────────────────────────────────────────────────────
@@ -2643,6 +2685,8 @@
     let annotated = true;
     let filter = "";
     let caretPos = null; // caret offset to restore after a filter re-render
+    let tags = [];
+    let loaded = false;
 
     async function loadTags() {
       const sep = "\x1f";
@@ -2669,7 +2713,8 @@
         ui.toast("Created tag " + name, "success");
         newName = "";
         newMsg = "";
-        await render();
+        loaded = false;
+        await render({ force: true });
       } else ui.toast(r.stderr || "Create tag failed", "error", 5000);
     }
 
@@ -2689,7 +2734,8 @@
       const r = await git("tag -d " + quote(name));
       if (r.code === 0) ui.toast("Deleted " + name, "success");
       else ui.toast(r.stderr || "Delete failed", "error", 5000);
-      await render();
+      loaded = false;
+      await render({ force: true });
     }
 
     async function delRemote(name) {
@@ -2704,7 +2750,8 @@
       else ui.toast(r.stderr || "Remote delete failed", "error", 5000);
     }
 
-    async function render() {
+    async function render(opts) {
+      const force = !!(opts && opts.force);
       const node = pane();
       node.innerHTML = "";
       node.className = "pane is-active tags-pane";
@@ -2745,7 +2792,10 @@
       // Keep the caret where the user was typing across the filter re-render.
       if (caretPos != null) { filterInput.focus(); try { filterInput.setSelectionRange(caretPos, caretPos); } catch (_) {} caretPos = null; }
 
-      const tags = await loadTags();
+      if (!loaded || force) {
+        tags = await loadTags();
+        loaded = true;
+      }
       const f = filter.toLowerCase();
       const visible = f ? tags.filter((t) => t.name.toLowerCase().includes(f)) : tags;
 
@@ -2769,7 +2819,7 @@
       node.append(list);
     }
 
-    return { render };
+    return { render, invalidate: () => { loaded = false; } };
   })();
 
   // ── PR tab (GitHub via gh CLI) ───────────────────────────────────────────
@@ -2783,6 +2833,8 @@
     let filter = "";
     let ghOk = null;         // cached once gh auth verified
     let listEl = null, detailEl = null; // live nodes for client-side re-paint
+    let prsLoaded = false;
+    let detailCache = new Map();
 
     function gh(args, opts) { return sh("gh " + args, opts || {}); }
 
@@ -2880,7 +2932,9 @@
       if (r.code === 0) {
         ui.toast("PR created", "success");
         creating = false; newTitle = ""; newBody = "";
-        await render();
+        prsLoaded = false;
+        detailCache.clear();
+        await render({ force: true });
       } else ui.toast(r.stderr || "Create PR failed (is the branch pushed?)", "error", 7000);
     }
 
@@ -2928,12 +2982,23 @@
       });
       if (!ok) return;
       const r = await gh("pr merge " + pr.number + " --squash --delete-branch", { timeout: 90000 });
-      if (r.code === 0) { ui.toast("Merged PR #" + pr.number, "success"); selected = null; await refresh(); }
+      if (r.code === 0) {
+        ui.toast("Merged PR #" + pr.number, "success");
+        selected = null;
+        prsLoaded = false;
+        detailCache.clear();
+        await refresh();
+      }
       else ui.toast(r.stderr || "Merge failed", "error", 7000);
     }
 
     // ── Detail pane ─────────────────────────────────────────────────────────
-    async function renderDetail(node, num) {
+    async function renderDetail(node, num, opts) {
+      const force = !!(opts && opts.force);
+      if (!force && detailCache.has(num)) {
+        paintDetail(node, detailCache.get(num));
+        return;
+      }
       node.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
       const fields = "number,title,body,state,isDraft,headRefName,baseRefName,author,reviewDecision,statusCheckRollup,url,additions,deletions,mergeable,labels";
       const r = await gh("pr view " + num + " --json " + fields);
@@ -2941,6 +3006,11 @@
       if (r.code !== 0) { node.innerHTML = ""; node.append(h("div", { class: "history-detail-empty" }, r.stderr || "Could not load PR")); return; }
       let pr;
       try { pr = JSON.parse(r.stdout); } catch (_) { node.innerHTML = ""; node.append(h("div", { class: "history-detail-empty" }, "Parse error")); return; }
+      detailCache.set(num, pr);
+      paintDetail(node, pr);
+    }
+
+    function paintDetail(node, pr) {
       node.innerHTML = "";
 
       node.append(h("div", { class: "pr-detail-head" },
@@ -3015,7 +3085,8 @@
     }
 
     // ── Render ──────────────────────────────────────────────────────────────
-    async function render() {
+    async function render(opts) {
+      const force = !!(opts && opts.force);
       const node = pane();
       node.innerHTML = "";
       node.className = "pane is-active pr-pane";
@@ -3067,19 +3138,23 @@
       detailEl.innerHTML = '<div class="history-detail-empty">Pick a PR to inspect.</div>';
       node.append(h("div", { class: "pr-split" }, listEl, detailEl));
 
-      listEl.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
-      const res = await loadPRs();
-      if (res.error) { listEl.innerHTML = ""; listEl.append(h("div", { class: "empty-files" }, res.error)); return; }
-      prs = res.prs;
+      if (!prsLoaded || force) {
+        listEl.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
+        const res = await loadPRs();
+        if (res.error) { listEl.innerHTML = ""; listEl.append(h("div", { class: "empty-files" }, res.error)); return; }
+        prs = res.prs;
+        prsLoaded = true;
+        if (force) detailCache.clear();
+        // Drop a stale selection if that PR is no longer open.
+        if (selected != null && !prs.some((p) => p.number === selected)) selected = null;
+      }
       setBadge();
-      // Drop a stale selection if that PR is no longer open.
-      if (selected != null && !prs.some((p) => p.number === selected)) selected = null;
 
       paintList();
-      if (selected != null) await renderDetail(detailEl, selected);
+      if (selected != null) await renderDetail(detailEl, selected, { force });
     }
 
-    return { render };
+    return { render, invalidate: () => { prsLoaded = false; detailCache.clear(); } };
   })();
 
   // ── No-repo bootstrap ────────────────────────────────────────────────────
@@ -3152,11 +3227,14 @@
     const btn = $("#refresh-btn");
     if (btn) btn.classList.add("spinning");
     try {
+      for (const tab of [branchesTab, syncTab, historyTab, stashTab, tagsTab, prTab]) {
+        if (tab && tab.invalidate) tab.invalidate();
+      }
       await readHead();
       await detectRebase();
       await probeStashCount();
       paintTopBar();
-      await renderActiveTab();
+      await renderActiveTab({ force: true });
     } finally {
       if (btn) btn.classList.remove("spinning");
     }

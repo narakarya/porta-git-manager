@@ -4,6 +4,12 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.11] — 2026-05-30
+
+### Changed
+- **Tab rendering is less chatty.** Branches, Sync remotes, History logs/details, Stash, Tags, and PR list/details now cache their loaded data across tab switches. The refresh button and data-changing actions still force reloads.
+- **Diff file tree rows are cleaner.** Folder/file rows now use steadier spacing, clearer folder icons, fixed-width diffstat pills, and more readable file-name styling.
+
 ## [0.7.10] — 2026-05-30
 
 ### Fixed
