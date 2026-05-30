@@ -1417,28 +1417,45 @@
       await refresh();
     }
 
-    // Read-only preview of what a branch carries relative to current HEAD:
-    // `HEAD...<branch>` (three-dot) diffs against the merge-base, so it shows
-    // only that branch's own changes, not commits unique to HEAD.
+    // Read-only preview of how a branch differs from HEAD. Default direction
+    // is three-dot `HEAD...<branch>` — what the branch carries relative to
+    // the merge base. If that's empty (e.g. the branch was created from main,
+    // never updated, and main moved forward — branch is "unmerged" per
+    // `git branch --merged` but has no own work), fall back to a two-arg
+    // `<branch> HEAD` diff so the user still sees what HEAD has that the
+    // branch doesn't. Only when BOTH directions are empty is the branch truly
+    // identical to HEAD.
     async function diffBranch(b) {
       const ref = b.name;
+      let direction = "branch-side";
+
       const fetchFiles = async ({ ignoreWhitespace, context } = { ignoreWhitespace: false, context: 3 }) => {
         const flags = (ignoreWhitespace ? " -w" : "") + " -U" + context;
-        const r = await git("diff HEAD..." + quote(ref) + " --no-color" + flags);
+        const cmd = direction === "head-side"
+          ? "diff " + quote(ref) + " HEAD --no-color" + flags
+          : "diff HEAD..." + quote(ref) + " --no-color" + flags;
+        const r = await git(cmd);
         if (r.code !== 0) throw new Error(r.stderr || "Diff failed");
         return gmParseDiffDoc(r.stdout);
       };
-      const files = await fetchFiles();
+
+      let files = await fetchFiles();
+      let title = "Branch diff: " + b.name;
+      let subtitle = files.length + " files changed";
+
       if (!files.length) {
-        ui.toast("No changes vs current branch (already merged or identical)", "info", 4000);
-        return;
+        // Three-dot empty — try the other direction.
+        direction = "head-side";
+        files = await fetchFiles();
+        if (!files.length) {
+          ui.toast("Branch is identical to HEAD — nothing to diff.", "info", 4000);
+          return;
+        }
+        title = "Branch diff: " + b.name + " (behind HEAD)";
+        subtitle = files.length + " files HEAD carries that this branch doesn't";
       }
-      await ui.diffModal({
-        title: "Branch diff: " + b.name,
-        subtitle: files.length + " files changed",
-        files,
-        refetch: fetchFiles,
-      });
+
+      await ui.diffModal({ title, subtitle, files, refetch: fetchFiles });
     }
 
     // Load + initial paint. The search box lives here so it survives
