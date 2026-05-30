@@ -887,6 +887,11 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
 }
 .branch-row + .branch-row { border-top: 1px solid var(--border); }
 .branch-row:hover { background: var(--bg-hover); }
+.branch-row.is-viewing {
+  background: rgba(96, 165, 250, 0.12);
+  border-left-color: var(--blue);
+}
+.branch-row.is-viewing .branch-name { color: var(--blue); }
 .branch-row.is-current {
   background: rgba(52, 211, 153, 0.06);
   border-left-color: var(--emerald);
@@ -1180,6 +1185,14 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
 }
 .stash-row + .stash-row { border-top: 1px solid var(--border); }
 .stash-row:hover { background: var(--bg-hover); }
+.stash-row.is-viewing {
+  background: rgba(96, 165, 250, 0.12);
+  border-left-color: var(--blue);
+}
+.stash-row.is-viewing .stash-idx {
+  color: var(--blue);
+  background: rgba(96, 165, 250, 0.14);
+}
 .stash-row .stash-idx {
   color: var(--violet);
   font-family: var(--mono);
@@ -1346,7 +1359,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
   width: 100%;
   display: flex;
   flex-direction: column;
-  max-height: 86vh;
+  height: min(720px, 86vh);
   padding: 0;
   overflow: hidden;
 }

@@ -4,6 +4,16 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.20] — 2026-05-30
+
+### Changed
+- **Diff viewer sizing is stable while browsing stash and branch changes.** The modal keeps a consistent viewport-sized height instead of shrinking when a selected file has fewer changes.
+- **The row currently opened in a diff viewer is highlighted.** Stash and branch rows stay visually marked while their modal is open, making it clear which item is being inspected.
+
+### Fixed
+- **Clicking files in the diff viewer no longer causes distracting scroll jumps.** File-tree selections keep focus stable while switching between files.
+- **Untracked directory leaves show folder icons.** Status and diff trees now render paths such as `.claude/` as a single selectable folder-like row instead of a generic file.
+
 ## [0.7.19] — 2026-05-30
 
 ### Changed

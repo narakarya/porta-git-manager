@@ -17,9 +17,8 @@
     for (const f of files) {
       let parts = (f.path || "?").split("/");
       // Paths ending in "/" — `git status --porcelain` reports untracked
-      // directories like ".claude/". Treat them as a single leaf at parent
-      // level (with `_name` keeping the trailing slash for display) rather
-      // than a directory node plus an empty-name file child.
+      // directories like ".claude/". Treat them as one selectable leaf at
+      // parent level, but mark them so renderers can show folder UI.
       let trailingSlash = false;
       if (parts.length > 1 && parts[parts.length - 1] === "") {
         parts = parts.slice(0, -1);
@@ -33,7 +32,7 @@
       }
       const tail = parts[parts.length - 1];
       const _name = trailingSlash ? tail + "/" : tail;
-      node.files.push(Object.assign({ _name }, f));
+      node.files.push(Object.assign({ _name, _isDirectory: trailingSlash }, f));
     }
     return root;
   }

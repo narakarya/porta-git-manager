@@ -335,6 +335,7 @@
             const visible = gmFilterFiles(currentFiles, treeFilter);
             const allRow = h("button", {
               class: "diff-tree-row diff-tree-all" + (!treeFilter && (!activeRowRef.row || activeRowRef.row === null) ? " is-active" : ""),
+              onMouseDown: (e) => e.preventDefault(),
               onClick: () => { setActive(allRow); showList(visible); },
             },
               h("span", { class: "diff-tree-name" },
@@ -798,6 +799,7 @@
         const row = h("button", {
           class: "diff-tree-row diff-tree-file" + statusCls + (rowClassFor(f) ? " " + rowClassFor(f) : ""),
           style: { paddingLeft: (depth * 12 + 10) + "px" },
+          onMouseDown: (e) => e.preventDefault(),
           onClick: (e) => onPick(f, row, e),
         }, ...(Array.isArray(inner) ? inner : [inner]));
         row.dataset.path = f.path;
@@ -856,7 +858,7 @@
   function defaultDiffRow(f) {
     const st = gmFileStats(f);
     return [
-      gmFileIcon(f.path),
+      f._isDirectory ? gmFolderIcon(false) : gmFileIcon(f.path),
       h("span", { class: "diff-tree-name", title: f.path }, f._name),
       h("span", { class: "diff-tree-stat" },
         st.add ? h("span", { class: "stat-add" }, "+" + st.add) : null,
@@ -1508,7 +1510,7 @@
         ? "Submodule: " + (file.submoduleSummary || "dirty")
         : file.untracked ? "Untracked" : "";
       return [
-        gmFileIcon(file.path),
+        file._isDirectory ? gmFolderIcon(false) : gmFileIcon(file.path),
         h("span", { class: "file-status status-" + gmStatusClass(file.code), title: statusTitle }, statusText),
         h("span", { class: "file-name", title: file.path,
           html: window.GMText.highlightMatches(file._name || file.path.split("/").pop(), filter || "") }),
@@ -1683,6 +1685,7 @@
     let newBranchName = "";
     const selected = new Set(); // branch names ticked for bulk delete
     let facet = "all";          // local-branch facet: all|merged|unmerged|local-only|on-remote
+    let viewingName = null;
     let loaded = false;
 
     async function loadBranches() {
@@ -1861,6 +1864,8 @@
     async function diffBranch(b) {
       // Double-click guard via showLoading — bail if a modal is already up.
       if (!ui.showLoading("Diffing " + b.name + "…")) return;
+      viewingName = b.name;
+      paintViewing();
       const ref = b.name;
       let direction = "branch-side";
 
@@ -1901,6 +1906,9 @@
       } catch (err) {
         ui.hideLoading();
         ui.toast(err.message || "Diff failed", "error", 5000);
+      } finally {
+        viewingName = null;
+        paintViewing();
       }
     }
 
@@ -2037,7 +2045,8 @@
         // fire the row click. Current branch has no diff target — no row
         // onClick there.
         return h("div", {
-          class: "branch-row" + (b.isCurrent ? " is-current" : "") + (selected.has(b.name) ? " is-checked" : "") + (opts.onActivate ? " is-clickable" : ""),
+          class: "branch-row" + (b.isCurrent ? " is-current" : "") + (selected.has(b.name) ? " is-checked" : "") + (viewingName === b.name ? " is-viewing" : "") + (opts.onActivate ? " is-clickable" : ""),
+          dataset: { branch: b.name },
           onClick: opts.onActivate ? () => opts.onActivate(b) : undefined,
         },
           lead,
@@ -2123,6 +2132,14 @@
       }
 
       wrap.append(list);
+    }
+
+    function paintViewing() {
+      const root = pane();
+      if (!root) return;
+      root.querySelectorAll(".branch-row[data-branch]").forEach((row) => {
+        row.classList.toggle("is-viewing", row.dataset.branch === viewingName);
+      });
     }
 
     return { render, invalidate: () => { loaded = false; } };
@@ -2744,6 +2761,7 @@
     let msg = "";
     let includeUntracked = false;
     const selectedRefs = new Set(); // stash refs ticked for bulk drop
+    let viewingRef = null;
     let loaded = false;
 
     async function loadStash() {
@@ -2798,6 +2816,8 @@
       // the double-click guard. Bail early so we don't queue a second fetch
       // behind the first.
       if (!ui.showLoading("Loading stash diff…")) return;
+      viewingRef = s.ref;
+      paintViewing();
       const fetchFiles = async ({ ignoreWhitespace, context } = { ignoreWhitespace: false, context: 3 }) => {
         const flags = (ignoreWhitespace ? " -w" : "") + " -U" + context;
         const r = await git("stash show -p --no-color" + flags + " " + quote(s.ref));
@@ -2821,6 +2841,9 @@
       } catch (err) {
         ui.hideLoading();
         ui.toast(err.message || "Failed to load stash diff", "error", 5000);
+      } finally {
+        viewingRef = null;
+        paintViewing();
       }
     }
 
@@ -2910,7 +2933,8 @@
           // viewer affordance.
           const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
           list.append(h("div", {
-            class: "stash-row" + (selectedRefs.has(s.ref) ? " is-checked" : ""),
+            class: "stash-row" + (selectedRefs.has(s.ref) ? " is-checked" : "") + (viewingRef === s.ref ? " is-viewing" : ""),
+            dataset: { ref: s.ref },
             onClick: () => show(s),
           },
             h("input", {
@@ -2938,6 +2962,14 @@
         }
       }
       wrap.append(list);
+    }
+
+    function paintViewing() {
+      const root = pane();
+      if (!root) return;
+      root.querySelectorAll(".stash-row[data-ref]").forEach((row) => {
+        row.classList.toggle("is-viewing", row.dataset.ref === viewingRef);
+      });
     }
 
     return { render, invalidate: () => { loaded = false; } };
