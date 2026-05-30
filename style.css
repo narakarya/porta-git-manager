@@ -748,6 +748,10 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 /* ─── History pane ───────────────────────────────────────────────────────── */
 .pane.is-active.history-pane { display: flex; flex-direction: column; height: 100%; }
 .history-top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg);
   display: flex;
   gap: 8px;
   padding: 10px 12px;
@@ -801,7 +805,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 
 .log-row {
   display: grid;
-  grid-template-columns: 60px 1fr;
+  grid-template-columns: 14px 60px 1fr;
   gap: 8px;
   align-items: baseline;
   padding: 4px 12px;
@@ -1519,3 +1523,17 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .skel-diff-line { height: 12px; margin: 2px 0; width: 92%; }
 .skel-card .sep { opacity: 0.3; }
 .skel-strip { background: var(--bg); }
+
+.author-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.9);
+  user-select: none;
+}

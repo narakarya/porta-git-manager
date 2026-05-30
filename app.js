@@ -605,6 +605,21 @@
     return svg;
   }
 
+  /**
+   * Deterministic pastel HSL background per author name.
+   * djb2 hash → pick one of 12 hues; fixed saturation/lightness for readability
+   * against the dark theme. Two different spellings of the same author's name
+   * map to different colors — accepted trade-off.
+   */
+  function gmAuthorChipColor(name) {
+    let hash = 5381;
+    for (let i = 0; i < (name || "").length; i++) {
+      hash = ((hash << 5) + hash + name.charCodeAt(i)) >>> 0;
+    }
+    const hue = (hash % 12) * 30;   // 0, 30, 60, … 330
+    return "hsl(" + hue + ", 45%, 35%)";
+  }
+
   /** Default row renderer — matches the previous diff modal look (+/- pills). */
   function defaultDiffRow(f) {
     const st = gmFileStats(f);
@@ -1944,6 +1959,10 @@
         return;
       }
       for (const c of commits) {
+        const initial = (c.author || "?").trim().charAt(0).toUpperCase();
+        const chip = h("span", { class: "author-chip",
+          title: c.author,
+          style: { background: gmAuthorChipColor(c.author || "") } }, initial);
         const row = h("div", {
           class: "log-row" + (state.selectedCommit === c.sha ? " is-selected" : ""),
           onClick: () => {
@@ -1953,6 +1972,7 @@
           },
           dataset: { sha: c.sha },
         },
+          chip,
           h("span", { class: "log-sha" }, c.sha),
           h("span", null,
             h("span", { class: "log-msg-line", title: c.msg, html: window.GMText.highlightMatches(c.msg, (state.historyFilter || "").toLowerCase()) }),
