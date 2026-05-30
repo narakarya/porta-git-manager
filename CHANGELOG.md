@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.22] — 2026-05-30
+
+### Fixed
+- **Untracked folder previews now show a real file tree.** Status previews for folders such as `qa/` and `priv/imports/` render nested files instead of a flat pseudo-diff of added path lines.
+
 ## [0.7.21] — 2026-05-30
 
 ### Added

@@ -1704,6 +1704,13 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   padding: 7px 12px;
   font-size: 11px;
 }
+.status-untracked-tree {
+  padding: 4px 0 6px;
+}
+.status-untracked-tree .diff-tree-row {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
 
 .diff-file-block { border-bottom: 1px solid var(--border); }
 .diff-file-block:last-child { border-bottom: 0; }

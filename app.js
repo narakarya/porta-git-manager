@@ -1033,13 +1033,18 @@
           const dir = file.path.replace(/\/+$/, "");
           const r = await sh("find " + quote(dir) + " -type f 2>/dev/null | head -n 500");
           const files = (r.stdout || "").split("\n").filter(Boolean);
+          const listed = files.map((path) => ({
+            path: path.startsWith(file.path) ? path.slice(file.path.length) : path,
+            fullPath: path,
+            code: "?",
+            untracked: true,
+          }));
           return {
             untracked: true,
+            untrackedDirectory: true,
+            files: listed,
             header: [file.path + " (untracked directory · " + files.length + " file" + (files.length === 1 ? "" : "s") + ")"],
-            hunks: files.length ? [{
-              header: "@@ -0,0 +1," + files.length + " @@",
-              lines: files.map((l) => "+" + l),
-            }] : [],
+            hunks: [],
           };
         }
         // Untracked file has no real diff. Synthesize a hunk so the
@@ -1148,6 +1153,10 @@
           "Actions run inside this submodule. Commit submodule changes from that repo before committing the parent pointer.",
         ));
       }
+      if (parsed.untrackedDirectory) {
+        renderUntrackedDirectory(node, parsed, filePath);
+        return;
+      }
       const renderHunkBody = state.diffView === "split" ? renderSplitHunkBody : renderUnifiedHunkBody;
       for (const hunk of parsed.hunks) {
         const wrapper = h("div", { class: "hunk" });
@@ -1180,6 +1189,31 @@
         renderHunkBody(wrapper, hunk, lang);
         node.appendChild(wrapper);
       }
+    }
+
+    function renderUntrackedDirectory(node, parsed, filePath) {
+      const wrapper = h("div", { class: "hunk status-untracked-folder" });
+      const actions = h("span", { class: "hunk-actions" },
+        h("button", { class: "hunk-action", onClick: () => stage(filePath) }, "Stage all"),
+        h("button", { class: "hunk-action danger", onClick: () => deleteUntracked({ path: filePath }) }, "Delete"),
+      );
+      wrapper.appendChild(h("div", { class: "hunk-header" }, "@@ untracked files @@", actions));
+
+      if (!parsed.files.length) {
+        wrapper.appendChild(h("div", { class: "diff-large-note" }, "No files found in this folder."));
+        node.appendChild(wrapper);
+        return;
+      }
+
+      const tree = h("div", { class: "status-untracked-tree" });
+      gmRenderFileTree(tree, parsed.files, {
+        renderRow: (f) => [
+          gmFileIcon(f.fullPath || f.path),
+          h("span", { class: "diff-tree-name", title: f.fullPath || f.path }, f._name || f.path.split("/").pop()),
+        ],
+      });
+      wrapper.appendChild(tree);
+      node.appendChild(wrapper);
     }
 
     function renderUnifiedHunkBody(wrapper, hunk, lang) {
