@@ -1794,6 +1794,22 @@
     let caretPos = null; // caret offset to restore after a search re-render
     let lastFiles = []; // parsed files of the most-recently-rendered commit (used by Tasks 17/18)
 
+    function openInViewer(commit, files) {
+      if (!files || !files.length) { ui.toast("No diff to show", "info"); return; }
+      const fetchFiles = async ({ ignoreWhitespace, context } = { ignoreWhitespace: false, context: 3 }) => {
+        const flags = (ignoreWhitespace ? " -w" : "") + " -U" + context;
+        const r = await git("show --no-color --format= -p" + flags + " " + quote(commit.sha));
+        if (r.code !== 0) throw new Error(r.stderr || "git show failed");
+        return gmParseDiffDoc(r.stdout);
+      };
+      ui.diffModal({
+        title: commit.msg,
+        subtitle: commit.sha + " · " + commit.author + " · " + commit.when,
+        files,
+        refetch: fetchFiles,
+      });
+    }
+
     async function loadLog(filter) {
       const sep = "\x1f";
       const grep = filter ? " --grep=" + quote(filter) + " -i" : "";
@@ -1843,6 +1859,10 @@
         pillRow.append(h("span", { class: "parent-label" }, "parent:"));
         pillRow.append(h("span", { class: "commit-sha-pill" }, p));
       }
+      const viewerBtn = h("button", { class: "btn-mini",
+        onClick: (e) => { e.stopPropagation(); openInViewer(commit, lastFiles); } },
+        "Open in viewer ↗");
+      pillRow.append(viewerBtn);
       card.append(pillRow);
 
       detailNode.append(card);
