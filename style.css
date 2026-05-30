@@ -463,9 +463,9 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
 .commit-options .spacer { flex: 1; }
 
 /* ─── Diff lines ─────────────────────────────────────────────────────────── */
-.diff-line { display:grid; grid-template-columns:34px 34px 1fr; white-space:pre; min-height:18px; }
+.diff-line { display:grid; grid-template-columns:34px 34px 1fr; white-space:pre; min-height:18px; font-family:var(--mono); }
 .diff-line .diff-gutter { color:var(--text-dim); text-align:right; padding-right:8px; user-select:none; font-variant-numeric:tabular-nums; }
-.diff-line .diff-code { padding:0 12px 0 6px; }
+.diff-line .diff-code { padding:0 12px 0 6px; font-family:var(--mono); }
 .diff-line.diff-add { background:var(--diff-add-bg); }
 .diff-line.diff-del { background:var(--diff-del-bg); }
 .diff-line.diff-add .diff-code { color:var(--emerald); }
@@ -1470,6 +1470,11 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .status-list .diff-tree-file.status-deleted  .file-status { color: var(--red); }
 .status-list .diff-tree-file.status-renamed  .file-status { color: var(--blue); }
 .status-list .diff-tree-file.status-untracked .file-status { color: var(--text-mute); }
+.status-list .diff-tree-file .file-status.status-modified { color: var(--amber); }
+.status-list .diff-tree-file .file-status.status-added    { color: var(--emerald); }
+.status-list .diff-tree-file .file-status.status-deleted  { color: var(--red); }
+.status-list .diff-tree-file .file-status.status-renamed  { color: var(--blue); }
+.status-list .diff-tree-file .file-status.status-untracked { color: var(--text-mute); }
 .status-list .diff-tree-file .row-actions {
   margin-left: auto;
   display: flex;
@@ -1481,6 +1486,13 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .status-list .diff-tree-file.is-selected .row-actions { opacity: 1; }
 .status-list .diff-tree-file.is-selected {
   background: var(--bg-selected);
+}
+
+.status-submodule-note {
+  color: var(--text-mute);
+  border-bottom: 1px solid var(--border);
+  padding: 7px 12px;
+  font-size: 11px;
 }
 
 .diff-file-block { border-bottom: 1px solid var(--border); }

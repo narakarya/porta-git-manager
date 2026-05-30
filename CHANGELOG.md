@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.9] — 2026-05-30
+
+### Fixed
+- **Status tab can manage dirty submodules.** `git status --porcelain=v2` is now parsed so entries like `priv` show as modified submodules instead of a confusing `?`, and stage/discard actions run inside the submodule when needed.
+
 ## [0.7.8] — 2026-05-30
 
 ### Fixed

@@ -649,6 +649,8 @@
   // aliases so callers don't have to know.
   const gmFileTree = window.GMTree.fileTree;
   const gmFilterFiles = window.GMTree.filterFiles;
+  const gmParseStatus = window.GMStatus.parsePorcelain;
+  const gmStatusClass = window.GMStatus.statusClass;
 
   /**
    * Render a file tree into `nav`. The data layer (`gmFileTree`) builds
@@ -846,26 +848,10 @@
     let lastDiffSource = null;  // "staged" | "unstaged" | "untracked"
     let caretPos = null;        // caret offset to restore after a filter re-render
 
-    function parsePorcelain(text) {
-      const staged = [], unstaged = [];
-      for (const line of text.split("\n").filter(Boolean)) {
-        if (line.length < 3) continue;
-        const x = line[0], y = line[1];
-        const path = line.slice(3).replace(/^"|"$/g, "");
-        if (x !== " " && x !== "?") staged.push({ code: x, path });
-        if (y !== " " || x === "?") unstaged.push({ code: y === " " ? x : y, path, untracked: x === "?" });
-      }
-      return { staged, unstaged };
-    }
-
-    function statusClass(code) {
-      return ({ M: "modified", A: "added", D: "deleted", R: "renamed", "?": "untracked" })[code] || "modified";
-    }
-
     async function loadStatus() {
-      const r = await git("status --porcelain=v1");
+      const r = await git("status --porcelain=v2");
       if (r.code !== 0) return { err: r.stderr || "git status failed" };
-      return parsePorcelain(r.stdout);
+      return gmParseStatus(r.stdout);
     }
 
     /**
@@ -875,6 +861,27 @@
      * for `git apply` when the user clicks Stage hunk / Unstage / Discard.
      */
     async function loadDiff(file, source) {
+      if (file.submodule) {
+        const where = "-C " + quote(file.path) + " ";
+        const status = await git(where + "status --short");
+        const stagedDiff = await git(where + "diff --cached --no-color");
+        const unstagedDiff = await git(where + "diff --no-color");
+        const summary = file.submoduleSummary ? " · " + file.submoduleSummary : "";
+        const header = [file.path + " (submodule" + summary + ")"];
+        const hunks = [];
+        let body = "";
+        if ((status.stdout || "").trim()) {
+          body += "Submodule status:\n" + status.stdout.trimEnd() + "\n";
+        }
+        if ((stagedDiff.stdout || "").trim()) body += "\nStaged diff:\n" + stagedDiff.stdout.trimEnd() + "\n";
+        if ((unstagedDiff.stdout || "").trim()) body += "\nUnstaged diff:\n" + unstagedDiff.stdout.trimEnd() + "\n";
+        if (!body.trim()) body = "No inner submodule changes.";
+        hunks.push({
+          header: "@@ submodule " + file.path + " @@",
+          lines: body.split("\n").map((l) => " " + l),
+        });
+        return { submodule: true, header, hunks };
+      }
       if (source === "untracked" || file.untracked) {
         // Untracked directory: list the files it contains rather than
         // trying to `head` a directory (which errors).
@@ -992,11 +999,25 @@
         const cls = (m.startsWith("diff ") || m.startsWith("+++") || m.startsWith("---")) ? "diff-file" : "diff-meta";
         node.appendChild(h("span", { class: "diff-line " + cls }, m || " "));
       }
+      if (parsed.submodule) {
+        node.appendChild(h("div", { class: "status-submodule-note" },
+          "Actions run inside this submodule. Commit submodule changes from that repo before committing the parent pointer.",
+        ));
+      }
       const renderHunkBody = state.diffView === "split" ? renderSplitHunkBody : renderUnifiedHunkBody;
       for (const hunk of parsed.hunks) {
         const wrapper = h("div", { class: "hunk" });
         const actions = h("span", { class: "hunk-actions" });
-        if (source === "unstaged" || source === "untracked") {
+        if (parsed.submodule) {
+          if (source === "staged") {
+            actions.append(h("button", { class: "hunk-action", onClick: () => unstage(filePath, true) }, "Unstage"));
+          } else {
+            actions.append(
+              h("button", { class: "hunk-action", onClick: () => stage(filePath, true) }, "Stage all"),
+              h("button", { class: "hunk-action danger", onClick: () => discard({ path: filePath, submodule: true }) }, "Discard all"),
+            );
+          }
+        } else if (source === "unstaged" || source === "untracked") {
           actions.append(
             h("button", { class: "hunk-action",        onClick: () => stageOneHunk(filePath, hunk, source) }, "Stage hunk"),
             h("button", { class: "hunk-action danger", onClick: () => discardOneHunk(filePath, hunk, source) }, "Discard"),
@@ -1152,9 +1173,25 @@
       }
     }
 
-    const stage     = (p) => withRefresh(() => git("add -- " + quote(p)));
-    const stageAll  = () => withRefresh(() => git("add -A"), "Staged all changes");
-    async function unstage(p) {
+    const stage = (p, submodule) => withRefresh(async () => {
+      if (submodule) {
+        const inner = await git("-C " + quote(p) + " add -A");
+        if (inner.code !== 0) return inner;
+      }
+      return git("add -- " + quote(p));
+    }, submodule ? "Staged submodule changes" : null);
+    const stageAll  = () => withRefresh(async () => {
+      const r = await git("add -A");
+      if (r.code !== 0) return r;
+      for (const f of state.statusFiles.unstaged) {
+        if (!f.submodule) continue;
+        const inner = await git("-C " + quote(f.path) + " add -A");
+        if (inner.code !== 0) return inner;
+      }
+      return { code: 0 };
+    }, "Staged all changes");
+    async function unstage(p, submodule) {
+      if (submodule) await git("-C " + quote(p) + " restore --staged .");
       const r = await git("restore --staged -- " + quote(p));
       if (r.code !== 0) await git("reset HEAD -- " + quote(p));
       await refresh();
@@ -1172,6 +1209,17 @@
         danger: true, okLabel: "Discard",
       });
       if (!ok) return;
+      if (file.submodule) {
+        let r = await git("-C " + quote(file.path) + " restore --staged --worktree .");
+        if (r.code !== 0) { ui.toast(r.stderr || "Discard failed", "error", 5000); await refresh(); return; }
+        r = await git("-C " + quote(file.path) + " clean -fd");
+        if (r.code !== 0) { ui.toast(r.stderr || "Clean failed", "error", 5000); await refresh(); return; }
+        r = await git("submodule update --checkout -- " + quote(file.path));
+        if (r.code !== 0) { ui.toast(r.stderr || "Submodule reset failed", "error", 5000); await refresh(); return; }
+        ui.toast("Discarded submodule changes", "success");
+        await refresh();
+        return;
+      }
       if (file.untracked) {
         let r = await git("clean -fd -- " + quote(file.path));
         if (r.code !== 0) { ui.toast(r.stderr || "Discard failed", "error", 5000); await refresh(); return; }
@@ -1218,15 +1266,19 @@
     /** Build a Status-flavoured tree row's inner content (icon, status letter, name, actions). */
     function statusTreeRow(file, source, diffNode, filter) {
       const isStaged = source === "staged";
+      const isSubmodule = source === "submodule";
+      const statusTitle = file.submodule
+        ? "Submodule: " + (file.submoduleSummary || "dirty")
+        : file.untracked ? "Untracked" : "";
       return [
         gmFileIcon(file.path),
-        h("span", { class: "file-status status-" + statusClass(file.code) }, file.code),
+        h("span", { class: "file-status status-" + gmStatusClass(file.code), title: statusTitle }, file.code),
         h("span", { class: "file-name", title: file.path,
           html: window.GMText.highlightMatches(file._name || file.path.split("/").pop(), filter || "") }),
         h("span", { class: "row-actions" },
           isStaged
-            ? h("button", { class: "row-action", onClick: (e) => { e.stopPropagation(); unstage(file.path); } }, "unstage")
-            : h("button", { class: "row-action", onClick: (e) => { e.stopPropagation(); stage(file.path); } }, "stage"),
+            ? h("button", { class: "row-action", onClick: (e) => { e.stopPropagation(); unstage(file.path, file.submodule); } }, "unstage")
+            : h("button", { class: "row-action", onClick: (e) => { e.stopPropagation(); stage(file.path, file.submodule); } }, isSubmodule ? "stage all" : "stage"),
           !isStaged && h("button", { class: "row-action danger", onClick: (e) => { e.stopPropagation(); discard(file); } }, "discard"),
         ),
       ];
@@ -1310,7 +1362,7 @@
       }
 
       appendSection("Staged", staged, () => "staged");
-      appendSection("Changes", unstaged, (f) => f.untracked ? "untracked" : "unstaged");
+      appendSection("Changes", unstaged, (f) => f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged");
 
       const split = h("div", { class: "status-split" }, list, diffNode);
       node.append(split);
