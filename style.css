@@ -1515,7 +1515,16 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .pr-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
 .pr-section-title { font-size: 11px; font-weight: 600; color: var(--text-mute); text-transform: uppercase; letter-spacing: .04em; margin: 12px 0 6px; }
 .pr-checks { display: flex; flex-direction: column; gap: 3px; }
-.pr-check-row { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--text-mute); }
+.pr-checks.is-collapsed { display: none; }
+.pr-checks-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pr-check-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
+  padding: 2px 8px; border-radius: 999px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-mute); }
+.pr-check-pill.is-fail { color: var(--red); border-color: rgba(248,113,113,.3); }
+.pr-check-pill.is-pending { color: var(--amber); border-color: rgba(251,191,36,.3); }
+.pr-check-pill.is-pass { color: var(--emerald); border-color: rgba(52,211,153,.25); }
+.pr-check-row { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--text-mute);
+  text-decoration: none; padding: 2px 4px; border-radius: var(--radius-sm); }
+.pr-check-row.is-link:hover { background: var(--bg-hover); }
 .pr-check-dot { width: 7px; height: 7px; border-radius: 999px; flex: none; background: var(--text-dim); }
 .pr-check-dot.is-pass { background: var(--emerald); }
 .pr-check-dot.is-fail { background: var(--red); }
@@ -1523,7 +1532,43 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .pr-check-dot.is-skip { background: var(--text-dim); }
 .pr-check-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .pr-check-kind { color: var(--text-dim); font-size: 10px; }
-.pr-body { font-size: 12px; color: var(--text-mute); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.pr-check-kind.is-fail { color: var(--red); }
+.pr-check-kind.is-pending { color: var(--amber); }
+.pr-checks-toggle { background: none; border: none; color: var(--blue); font-size: 11px; cursor: pointer;
+  padding: 4px 0; margin-top: 2px; text-align: left; }
+.pr-checks-toggle:hover { text-decoration: underline; }
+.pr-body { font-size: 12px; color: var(--text-mute); line-height: 1.6; word-break: break-word; }
+.pr-body.is-empty { font-style: italic; color: var(--text-dim); }
+
+/* Rendered Markdown (PR descriptions). Scoped to .md-body so it can't leak. */
+.md-body { color: var(--text); white-space: normal; }
+.md-body .md-p { margin: 0 0 10px; }
+.md-body .md-h { color: var(--text); font-weight: 600; line-height: 1.3; margin: 16px 0 8px; }
+.md-body .md-h1 { font-size: 17px; border-bottom: 1px solid var(--border); padding-bottom: 5px; }
+.md-body .md-h2 { font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.md-body .md-h3 { font-size: 13px; }
+.md-body .md-h4, .md-body .md-h5, .md-body .md-h6 { font-size: 12px; color: var(--text-mute); }
+.md-body :first-child { margin-top: 0; }
+.md-body a { color: var(--blue); text-decoration: none; }
+.md-body a:hover { text-decoration: underline; }
+.md-body strong { color: var(--text); font-weight: 600; }
+.md-body code { font-family: var(--mono); font-size: 11px; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 5px; }
+.md-body .md-pre { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 12px; overflow-x: auto; margin: 0 0 10px; }
+.md-body .md-pre code { background: none; border: none; padding: 0; font-size: 11.5px; line-height: 1.5; color: var(--text); }
+.md-body .md-quote { border-left: 3px solid var(--border-hi); margin: 0 0 10px; padding: 2px 0 2px 12px; color: var(--text-mute); }
+.md-body .md-quote > :last-child { margin-bottom: 0; }
+.md-body .md-list { margin: 0 0 10px; padding-left: 22px; }
+.md-body .md-list .md-list { margin-bottom: 0; }
+.md-body .md-list li { margin: 2px 0; }
+.md-body .md-check { margin-right: 4px; vertical-align: middle; }
+.md-body .md-hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+.md-body .md-img { max-width: 100%; border-radius: var(--radius-sm); }
+.md-body .md-table { border-collapse: collapse; margin: 0 0 10px; font-size: 11.5px; display: block; overflow-x: auto; }
+.md-body .md-table th, .md-body .md-table td { border: 1px solid var(--border); padding: 4px 9px; text-align: left; }
+.md-body .md-table th { background: var(--bg-card); font-weight: 600; color: var(--text); }
+.md-body .md-table del { color: var(--text-dim); }
 
 .pr-create { display: flex; flex-direction: column; gap: 10px; padding: 16px; max-width: 640px; }
 .pr-create-head { font-size: 12px; color: var(--text-mute); }
@@ -1534,8 +1579,9 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   width: 15px;
   height: 15px;
   flex: 0 0 15px;
+  /* Brand glyphs carry their own fills; currentColor only drives the
+     monochrome generic/folder marks. Keep full opacity so brand hues stay true. */
   color: var(--text-mute);
-  opacity: 0.92;
 }
 .diff-tree-file:hover .ficon,
 .diff-tree-file.is-active .ficon,

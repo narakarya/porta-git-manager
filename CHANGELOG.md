@@ -4,6 +4,18 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.15] — 2026-05-30
+
+### Added
+- **Brand file-type icons.** The file tree now shows real, colored language logos (TypeScript, JavaScript, React for `.tsx`/`.jsx`, CSS, HTML, Python, Rust, Bash) sourced from Devicon, plus a JSON badge and a clean generic file mark. Embedded inline — still zero runtime dependencies.
+- **PR descriptions render as Markdown.** A new dependency-free, XSS-safe Markdown renderer (`md-util.js`) turns PR bodies into formatted HTML: headings, emphasis, inline/fenced code (syntax-highlighted), links, images, blockquotes, lists, task lists, tables, and autolinks. URLs are scheme-checked so `javascript:`/`data:` never reach the DOM.
+
+### Changed
+- **PR checks are summarized instead of dumped.** A pill summary (failing / pending / passed) sits up top, failing and pending checks are listed first, and passing checks collapse behind a "Show N passing checks" toggle. Each check links to its details run.
+
+### Fixed
+- **Clicking files in Status is no longer sluggish.** Selecting a file used to re-run `git status`, rebuild the whole pane, and re-run `git diff` on every click. Parsed status and per-file diffs are now cached, so switching between files is a pure repaint — caches refresh on actions, manual refresh, and Status-tab re-entry.
+
 ## [0.7.14] — 2026-05-30
 
 ### Changed

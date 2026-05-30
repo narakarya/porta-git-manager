@@ -861,7 +861,10 @@
     state.currentTab = name;
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-active", t.dataset.tab === name));
     document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("is-active", p.dataset.pane === name));
-    renderActiveTab();
+    // Re-entering Status should reflect the real working tree, so force a fresh
+    // read on activation; in-tab clicks then ride the cache. Other tabs keep
+    // their own loaded-flag caching and aren't forced here.
+    renderActiveTab(name === "status" ? { force: true } : undefined);
   }
 
   async function renderActiveTab(opts) {
@@ -879,10 +882,20 @@
     const selectedStatus = new Set();
     let lastSelectedStatusKey = null;
 
+    // Selection clicks repaint the pane via render(), but the working tree only
+    // actually changes on refresh()/an action (both force a render). So cache the
+    // parsed `git status` and per-file diffs and only re-shell when forced. This
+    // turns a file click from "two git subprocesses + rebuild" into a pure repaint.
+    let statusCache = null;
+    const diffCache = new Map(); // "source:path" -> parsed diff
+    function invalidateStatus() { statusCache = null; diffCache.clear(); }
+
     async function loadStatus() {
+      if (statusCache) return statusCache;
       const r = await git("status --porcelain=v2");
       if (r.code !== 0) return { err: r.stderr || "git status failed" };
-      return gmParseStatus(r.stdout);
+      statusCache = gmParseStatus(r.stdout);
+      return statusCache;
     }
 
     /**
@@ -1209,10 +1222,14 @@
         diffNode.innerHTML = '<div class="status-diff-empty">Select a file to preview the diff.</div>';
         return;
       }
+      const cacheKey = source + ":" + file.path;
+      const cached = diffCache.get(cacheKey);
+      if (cached) { renderDiffInto(diffNode, cached, source, file.path); return; }
       diffNode.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
       const parsed = await loadDiff(file, source);
       // If user clicked something else while we were loading, drop this result.
       if (lastDiffPath !== file.path || lastDiffSource !== source) return;
+      diffCache.set(cacheKey, parsed);
       renderDiffInto(diffNode, parsed, source, file.path);
     }
 
@@ -1420,7 +1437,10 @@
       ];
     }
 
-    async function render() {
+    async function render(opts) {
+      // refresh() and every mutating action pass { force:true } — that's our
+      // signal the working tree may have changed, so drop the cached status/diffs.
+      if (opts && opts.force) invalidateStatus();
       const node = pane();
       node.innerHTML = "";
       node.className = "pane is-active status-pane";
@@ -3195,23 +3215,82 @@
         h("button", { class: "btn-mini danger", onClick: () => merge(pr) }, "Squash & merge"),
       ));
 
-      // Checks list
+      // Checks — summary + attention rows always visible; passing/skipped
+      // collapsed behind a toggle so a PR with dozens of green checks stays calm.
       const checks = (pr.statusCheckRollup || []).map(checkInfo);
-      if (checks.length) {
+      if (checks.length) node.append(renderChecks(checks));
+
+      // Body — rendered as GitHub-flavored Markdown.
+      node.append(h("div", { class: "pr-section-title" }, "Description"));
+      if (pr.body && pr.body.trim()) {
+        node.append(h("div", { class: "pr-body md-body", html: window.GMMd.render(pr.body) }));
+      } else {
+        node.append(h("div", { class: "pr-body is-empty" }, "(no description)"));
+      }
+    }
+
+    // Build the collapsible checks section. Failing + pending checks are shown
+    // up front; passing/skipped ones hide behind a "Show N passing" toggle
+    // (auto-collapsed only when there are enough to be noisy).
+    function renderChecks(checks) {
+      const order = { fail: 0, pending: 1, skip: 2, pass: 3 };
+      const sorted = checks.slice().sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
+      const count = (k) => sorted.filter((c) => c.kind === k).length;
+      const fail = count("fail"), pend = count("pending"), pass = count("pass"), skip = count("skip");
+
+      const summary = h("div", { class: "pr-checks-summary" });
+      const pill = (n, kind, label) => n ? h("span", { class: "pr-check-pill is-" + kind },
+        h("span", { class: "pr-check-dot is-" + kind }), n + " " + label) : null;
+      summary.append(
+        pill(fail, "fail", "failing"),
+        pill(pend, "pending", "pending"),
+        pill(pass, "pass", "passed"),
+        pill(skip, "skip", "skipped"),
+      );
+
+      const row = (c) => h("a", {
+        class: "pr-check-row" + (c.url ? " is-link" : ""),
+        ...(c.url ? { href: c.url, target: "_blank", rel: "noopener noreferrer" } : {}),
+      },
+        h("span", { class: "pr-check-dot is-" + c.kind }),
+        h("span", { class: "pr-check-name" }, c.name),
+        h("span", { class: "pr-check-kind is-" + c.kind }, c.kind),
+      );
+
+      const attention = sorted.filter((c) => c.kind === "fail" || c.kind === "pending");
+      const rest = sorted.filter((c) => c.kind === "pass" || c.kind === "skip");
+
+      const wrap = h("div", { class: "pr-checks-wrap" });
+      wrap.append(h("div", { class: "pr-section-title" }, "Checks"), summary);
+
+      if (attention.length) {
         const cl = h("div", { class: "pr-checks" });
-        for (const c of checks) {
-          cl.append(h("div", { class: "pr-check-row" },
-            h("span", { class: "pr-check-dot is-" + c.kind }),
-            h("span", { class: "pr-check-name" }, c.name),
-            h("span", { class: "pr-check-kind" }, c.kind),
-          ));
-        }
-        node.append(h("div", { class: "pr-section-title" }, "Checks"), cl);
+        attention.forEach((c) => cl.append(row(c)));
+        wrap.append(cl);
       }
 
-      // Body
-      node.append(h("div", { class: "pr-section-title" }, "Description"));
-      node.append(h("div", { class: "pr-body" }, pr.body ? pr.body : "(no description)"));
+      if (rest.length) {
+        // Show inline when short and nothing else is demanding attention;
+        // otherwise tuck them behind a toggle.
+        const collapse = rest.length > 4 || attention.length > 0;
+        const restList = h("div", { class: "pr-checks" + (collapse ? " is-collapsed" : "") });
+        rest.forEach((c) => restList.append(row(c)));
+        if (collapse) {
+          let open = false;
+          const toggle = h("button", { class: "pr-checks-toggle" },
+            "Show " + rest.length + " passing check" + (rest.length === 1 ? "" : "s"));
+          toggle.addEventListener("click", () => {
+            open = !open;
+            restList.classList.toggle("is-collapsed", !open);
+            toggle.textContent = (open ? "Hide " : "Show ") + rest.length + " passing check" + (rest.length === 1 ? "" : "s");
+          });
+          wrap.append(toggle, restList);
+        } else {
+          wrap.append(restList);
+        }
+      }
+
+      return wrap;
     }
 
     // Client-side re-paint of the PR list from cached `prs` + filter — used by
