@@ -1061,6 +1061,10 @@
         bmp: "image/bmp",
         ico: "image/x-icon",
         avif: "image/avif",
+        tif: "image/tiff",
+        tiff: "image/tiff",
+        heic: "image/heic",
+        heif: "image/heif",
       })[extOf(path)] || null;
     }
 
@@ -1069,6 +1073,7 @@
       if (imageMime(path)) return "image";
       if (ext === "md" || ext === "markdown") return "markdown";
       if (ext === "html" || ext === "htm") return "html";
+      if (ext === "csv" || ext === "tsv") return "csv";
       return null;
     }
 
@@ -1079,12 +1084,19 @@
       if (kind === "image") {
         const mime = imageMime(path);
         const r = await sh("base64 " + quote(path));
-        if (r.code !== 0 || !r.stdout) return null;
+        if (r.code !== 0 || !r.stdout) {
+          return {
+            kind,
+            path,
+            mime,
+            error: r.stderr || "Could not read image preview.",
+          };
+        }
         return {
           kind,
           path,
           mime,
-          src: "data:" + mime + ";base64," + r.stdout.replace(/\s+/g, ""),
+          base64: r.stdout.replace(/\s+/g, ""),
         };
       }
       const r = await sh("head -c 524288 " + quote(path));
@@ -1333,8 +1345,18 @@
       wrapper.appendChild(h("div", { class: "hunk-header" }, "@@ preview " + p.kind + " @@", previewActions(source, filePath)));
 
       if (p.kind === "image") {
+        if (p.error) {
+          wrapper.appendChild(h("div", { class: "status-preview-error" }, p.error));
+          node.appendChild(wrapper);
+          return;
+        }
+        const img = h("img", { class: "status-preview-image", alt: p.path });
+        img.addEventListener("error", () => {
+          img.replaceWith(h("div", { class: "status-preview-error" }, "Image preview could not be rendered by this webview."));
+        });
+        img.src = imagePreviewUrl(p);
         wrapper.appendChild(h("div", { class: "status-preview-image-wrap" },
-          h("img", { class: "status-preview-image", src: p.src, alt: p.path }),
+          img,
         ));
       } else if (p.kind === "markdown") {
         wrapper.appendChild(h("div", { class: "status-preview-doc md-body", html: window.GMMd.render(p.content) }));
@@ -1345,11 +1367,64 @@
           srcdoc: p.content,
           title: "HTML preview: " + p.path,
         }));
+      } else if (p.kind === "csv") {
+        wrapper.appendChild(renderCsvPreview(p));
       }
       if (p.truncated) {
         wrapper.appendChild(h("div", { class: "diff-large-note" }, "Preview truncated at 512 KB."));
       }
       node.appendChild(wrapper);
+    }
+
+    function imagePreviewUrl(preview) {
+      try {
+        const bin = atob(preview.base64 || "");
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return URL.createObjectURL(new Blob([bytes], { type: preview.mime || "application/octet-stream" }));
+      } catch (_) {
+        return "data:" + (preview.mime || "application/octet-stream") + ";base64," + (preview.base64 || "");
+      }
+    }
+
+    function parseDelimited(text, delimiter) {
+      const rows = [];
+      let row = [], cell = "", quoted = false;
+      const src = String(text || "").replace(/\r\n?/g, "\n");
+      for (let i = 0; i < src.length; i++) {
+        const ch = src[i];
+        if (quoted) {
+          if (ch === '"' && src[i + 1] === '"') { cell += '"'; i++; }
+          else if (ch === '"') quoted = false;
+          else cell += ch;
+        } else if (ch === '"') quoted = true;
+        else if (ch === delimiter) { row.push(cell); cell = ""; }
+        else if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+        else cell += ch;
+      }
+      if (cell || row.length) { row.push(cell); rows.push(row); }
+      return rows;
+    }
+
+    function renderCsvPreview(preview) {
+      const delimiter = extOf(preview.path) === "tsv" ? "\t" : ",";
+      const rows = parseDelimited(preview.content, delimiter).filter((r) => r.some((c) => c !== ""));
+      if (!rows.length) return h("div", { class: "status-preview-error" }, "No rows found.");
+      const maxRows = 200, maxCols = 40;
+      const cols = Math.min(maxCols, Math.max(...rows.map((r) => r.length)));
+      const head = rows[0];
+      const body = rows.slice(1, maxRows + 1);
+      const table = h("table", { class: "status-preview-table" });
+      table.appendChild(h("thead", null,
+        h("tr", null, ...Array.from({ length: cols }, (_, i) => h("th", null, head[i] || ""))),
+      ));
+      table.appendChild(h("tbody", null,
+        ...body.map((r) => h("tr", null, ...Array.from({ length: cols }, (_, i) => h("td", null, r[i] || "")))),
+      ));
+      const note = rows.length - 1 > maxRows || cols === maxCols
+        ? h("div", { class: "diff-large-note" }, "Showing first " + Math.min(rows.length - 1, maxRows) + " rows and " + cols + " columns.")
+        : null;
+      return h("div", { class: "status-preview-table-wrap" }, table, note);
     }
 
     function renderUntrackedDirectory(node, parsed, filePath) {

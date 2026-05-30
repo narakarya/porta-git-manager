@@ -4,6 +4,15 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.25] — 2026-05-30
+
+### Added
+- **CSV and TSV files now preview as tables.** Status detail previews parse delimited files into a scrollable table with sticky headers.
+- **Syntax highlighting covers more languages.** The built-in highlighter now recognizes common Java/Kotlin, C/C++/C#, Go, PHP, Ruby, Elixir, SQL, YAML, TOML, INI, Dockerfile, Makefile, and shell files, and Markdown code fences use the expanded highlighter.
+
+### Fixed
+- **Image previews use Blob URLs with a visible error fallback.** This avoids webview restrictions that can block data URLs and makes unsupported image formats fail visibly.
+
 ## [0.7.24] — 2026-05-30
 
 ### Added

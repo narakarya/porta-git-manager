@@ -10,11 +10,16 @@ test("langFromPath maps known extensions", () => {
   assert.equal(langFromPath("a.css"), "css");
   assert.equal(langFromPath("a.rs"), "rust");
   assert.equal(langFromPath("a.py"), "python");
+  assert.equal(langFromPath("lib/foo.ex"), "elixir");
+  assert.equal(langFromPath("Gemfile"), "ruby");
+  assert.equal(langFromPath("Dockerfile"), "dockerfile");
+  assert.equal(langFromPath("schema.sql"), "sql");
+  assert.equal(langFromPath("config.yml"), "yaml");
+  assert.equal(langFromPath("main.go"), "go");
 });
 
 test("langFromPath returns null for unknown", () => {
   assert.equal(langFromPath("a.xyz"), null);
-  assert.equal(langFromPath("Makefile"), null);
 });
 
 test("tokenize splits keyword/string/number/comment", () => {
@@ -29,4 +34,11 @@ test("tokenize splits keyword/string/number/comment", () => {
 test("tokenize unknown lang returns one plain token", () => {
   const toks = tokenize("anything at all", null);
   assert.deepEqual(toks, [{ t: "anything at all", type: null }]);
+});
+
+test("tokenize handles broader language families", () => {
+  assert.equal(tokenize("defmodule A do\n# comment\nend", "elixir").find(t => t.t === "defmodule")?.type, "keyword");
+  assert.equal(tokenize("SELECT * FROM users -- note", "sql").find(t => t.t === "SELECT")?.type, "keyword");
+  assert.equal(tokenize("name: app", "yaml").find(t => t.t === "name")?.type, "type");
+  assert.equal(tokenize("<div class=\"x\">", "html").find(t => t.t === "class")?.type, "type");
 });

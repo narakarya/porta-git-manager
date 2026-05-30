@@ -42,10 +42,9 @@
   // Syntax highlight a code block when GMHi is present and the lang is known.
   function highlight(code, lang) {
     const Hi = typeof window !== "undefined" && window.GMHi;
-    const map = { sh: "shell", bash: "shell", zsh: "shell", py: "python", rs: "rust", ts: "js", tsx: "js", jsx: "js", javascript: "js", typescript: "js" };
+    const map = { sh: "shell", bash: "shell", zsh: "shell", py: "python", rb: "ruby", ex: "elixir", exs: "elixir", rs: "rust", ts: "js", tsx: "js", jsx: "js", javascript: "js", typescript: "js" };
     const l = map[lang] || lang;
-    const known = ["js", "rust", "python", "css", "json", "html", "shell"];
-    if (!Hi || !known.includes(l)) return escapeHtml(code);
+    if (!Hi || !l) return escapeHtml(code);
     try {
       return Hi.tokenize(code, l)
         .map((t) => (t.type ? '<span class="syn-' + t.type + '">' + escapeHtml(t.t) + "</span>" : escapeHtml(t.t)))
