@@ -34,6 +34,22 @@ test("fileTree handles a root-only file (no slash)", () => {
   assert.equal(root.dirs.size, 0);
 });
 
+test("fileTree treats trailing-slash paths (untracked dirs) as leaves with slash in _name", () => {
+  // git status reports untracked directories as ".claude/". The naive
+  // split would create a `.claude` dir node plus an empty-name file
+  // child — two visual rows for one logical entry. The tree should keep
+  // it as a single leaf at root with the slash preserved for display.
+  const root = fileTree([{ path: ".claude/" }, { path: "assets/js/hooks/" }]);
+  assert.equal(root.files.length, 1);
+  assert.equal(root.files[0]._name, ".claude/");
+  assert.equal(root.files[0].path, ".claude/");
+  // Second one: parent dirs created, leaf at deepest dir.
+  const assets = root.dirs.get("assets");
+  const js = assets.dirs.get("js");
+  assert.equal(js.files.length, 1);
+  assert.equal(js.files[0]._name, "hooks/");
+});
+
 test("fileTree preserves arbitrary file payload", () => {
   const root = fileTree([{ path: "a.js", hunks: [{ header: "@@" }], extra: 42 }]);
   const f = root.files[0];

@@ -15,14 +15,25 @@
   function fileTree(files) {
     const root = { name: "", dirs: new Map(), files: [] };
     for (const f of files) {
-      const parts = (f.path || "?").split("/");
+      let parts = (f.path || "?").split("/");
+      // Paths ending in "/" — `git status --porcelain` reports untracked
+      // directories like ".claude/". Treat them as a single leaf at parent
+      // level (with `_name` keeping the trailing slash for display) rather
+      // than a directory node plus an empty-name file child.
+      let trailingSlash = false;
+      if (parts.length > 1 && parts[parts.length - 1] === "") {
+        parts = parts.slice(0, -1);
+        trailingSlash = true;
+      }
       let node = root;
       for (let i = 0; i < parts.length - 1; i++) {
         const seg = parts[i];
         if (!node.dirs.has(seg)) node.dirs.set(seg, { name: seg, dirs: new Map(), files: [] });
         node = node.dirs.get(seg);
       }
-      node.files.push(Object.assign({ _name: parts[parts.length - 1] }, f));
+      const tail = parts[parts.length - 1];
+      const _name = trailingSlash ? tail + "/" : tail;
+      node.files.push(Object.assign({ _name }, f));
     }
     return root;
   }

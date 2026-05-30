@@ -526,12 +526,53 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 .diff-modal-main.is-wrap .diff-cell .diff-code,
 .diff-modal-main.is-wrap .diff-line .diff-code { white-space:pre-wrap; word-break:break-word; }
 
-/* Fullscreen modal — expands to viewport. Reverts on toggle off. */
+/* Fullscreen modal — break out of .modal-root's flex centering + 20px
+   padding by positioning the card directly against the viewport. The
+   parent also drops its padding via .modal-root-fullscreen so nothing
+   constrains the card. Reverts cleanly when class is removed. */
+.modal-root-fullscreen { padding: 0; }
 .modal-card.is-fullscreen {
-  width:100vw; height:100vh; max-width:100vw; max-height:100vh;
-  border-radius:0; top:0; left:0; transform:none;
+  position: fixed;
+  inset: 0;
+  width: auto; height: auto;
+  max-width: none; max-height: none;
+  margin: 0;
+  border-radius: 0;
+  border: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
 }
-.diff-modal-fs { min-width:60px; }
+.modal-card.is-fullscreen .diff-modal-head { padding: 10px 14px; }
+.modal-card.is-fullscreen .diff-modal-main { flex: 1; min-height: 0; }
+.diff-modal-fs { min-width: 60px; }
+
+/* File tree — folder rows are clickable + collapsible. The chevron flips
+   between ▾/▸ via JS textContent; CSS just sizes it and hides children. */
+.diff-tree-dir {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  font-size: 11px;
+  color: var(--text-mute);
+}
+.diff-tree-dir:hover { background: var(--bg-hover); color: var(--text); }
+.diff-tree-dir .tree-chev {
+  font-size: 9px;
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.diff-tree-dir:hover .tree-chev { opacity: 1; }
+.diff-tree-children.is-collapsed { display: none; }
+
+/* Branch row clickable variant — whole row opens diff (Diff button gone). */
+.branch-row.is-clickable { cursor: pointer; }
 .diff-cell.diff-cell-right { border-right:0; }
 .diff-cell.diff-del .diff-code { color:var(--red); } .diff-cell.diff-del { background:var(--diff-del-bg); }
 .diff-cell.diff-add .diff-code { color:var(--emerald); } .diff-cell.diff-add { background:var(--diff-add-bg); }
@@ -1227,7 +1268,8 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 2px 0 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
 }
 .facet-chip {
   display: inline-flex;
@@ -1398,7 +1440,18 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   cursor: pointer;
   user-select: none;
 }
-.diff-file-head .chev { font-size: 9px; opacity: 0.7; width: 9px; text-align: center; }
+.diff-file-head .chev {
+  font-size: 13px;
+  opacity: 0.8;
+  width: 18px;
+  text-align: center;
+  line-height: 1;
+  flex-shrink: 0;
+  color: var(--text-mute);
+  transition: color 0.12s;
+}
+.diff-file-head:hover .chev { color: var(--text); opacity: 1; }
+.diff-file-head { padding: 8px 14px; }
 .diff-file-head .path { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .diff-file-head .stats { margin-left: auto; display: flex; gap: 6px; font-size: 10.5px; }
 .diff-file-block.is-collapsed .diff-file-body { display: none; }

@@ -191,6 +191,7 @@
         root.innerHTML = "";
         const close = () => {
           root.hidden = true;
+          root.classList.remove("modal-root-fullscreen");
           root.innerHTML = "";
           window.removeEventListener("keydown", onKey, true);
           resolve();
@@ -322,23 +323,46 @@
         const optsBar = hasRefetch ? h("div", { class: "diff-modal-opts" }, wsLabel, ctxSelect) : null;
 
         // Wrap + Fullscreen — always available (no refetch dependency).
-        let wrap = false;
+        // Both persist via localStorage so the user's preference survives
+        // closing & re-opening the modal.
+        const lsGet = (k, fallback) => {
+          try { const v = window.localStorage.getItem(k); return v == null ? fallback : v === "true"; }
+          catch (_) { return fallback; }
+        };
+        const lsSet = (k, v) => { try { window.localStorage.setItem(k, String(v)); } catch (_) {} };
+
+        let wrap = lsGet("pgm.diff.wrap", false);
         const wrapChk = h("input", {
           type: "checkbox",
-          onChange: (e) => { wrap = e.target.checked; main.classList.toggle("is-wrap", wrap); },
+          checked: wrap,
+          onChange: (e) => {
+            wrap = e.target.checked;
+            lsSet("pgm.diff.wrap", wrap);
+            main.classList.toggle("is-wrap", wrap);
+          },
         });
         const wrapLabel = h("label", { class: "diff-modal-opt" }, wrapChk, "Wrap");
+        if (wrap) main.classList.add("is-wrap");
 
-        let fullscreen = false;
+        let fullscreen = lsGet("pgm.diff.fullscreen", false);
         const fsBtn = h("button", {
           class: "btn-ghost diff-modal-fs",
           title: "Toggle fullscreen",
           onClick: () => {
             fullscreen = !fullscreen;
-            card.classList.toggle("is-fullscreen", fullscreen);
-            fsBtn.textContent = fullscreen ? "Restore" : "Full";
+            lsSet("pgm.diff.fullscreen", fullscreen);
+            applyFullscreen();
           },
-        }, "Full");
+        }, fullscreen ? "Restore" : "Full");
+        function applyFullscreen() {
+          // The Escape handler we added below relies on the modal-root flex
+          // container — fullscreen also toggles a class on root so its
+          // padding can be turned off (otherwise the card can't actually
+          // reach the viewport edges; see .modal-root.is-fullscreen rule).
+          root.classList.toggle("modal-root-fullscreen", fullscreen);
+          card.classList.toggle("is-fullscreen", fullscreen);
+          fsBtn.textContent = fullscreen ? "Restore" : "Full";
+        }
         const viewOpts = h("div", { class: "diff-modal-opts" }, wrapLabel);
 
         const toggle = h("div", { class: "view-toggle" },
@@ -379,6 +403,7 @@
           main,
         );
         root.appendChild(card);
+        if (fullscreen) applyFullscreen();   // apply persisted state on open
         showList(files);
       });
     },
@@ -589,16 +614,32 @@
     const node = gmFileTree(files);
     const onPick = opts.onPick || (() => {});
     const renderRow = opts.renderRow || defaultDiffRow;
-    walk(node, opts.depth || 0);
+    walk(nav, node, opts.depth || 0);
 
-    function walk(n, depth) {
+    function walk(parent, n, depth) {
       for (const dir of n.dirs.values()) {
-        nav.append(h("div", {
+        // Folder row: chevron + name. Clicking toggles the child wrapper's
+        // .is-collapsed class (CSS hides children when set). State stays
+        // in the DOM — caller doesn't need to track anything; if the
+        // caller fully re-renders the tree, folders reset to expanded.
+        const chev = h("span", { class: "tree-chev" }, "▾");
+        const dirRow = h("div", {
           class: "diff-tree-row diff-tree-dir",
-          style: { paddingLeft: (depth * 12 + 10) + "px" },
+          style: { paddingLeft: (depth * 12 + 6) + "px" },
           title: dir.name,
-        }, dir.name + "/"));
-        walk(dir, depth + 1);
+        },
+          chev,
+          h("span", { class: "diff-tree-name" }, dir.name + "/"),
+        );
+        const childWrap = h("div", { class: "diff-tree-children" });
+        dirRow.addEventListener("click", () => {
+          const collapsed = childWrap.classList.toggle("is-collapsed");
+          dirRow.classList.toggle("is-collapsed", collapsed);
+          chev.textContent = collapsed ? "▸" : "▾";
+        });
+        parent.append(dirRow);
+        parent.append(childWrap);
+        walk(childWrap, dir, depth + 1);
       }
       for (const f of n.files) {
         const inner = renderRow(f, depth);
@@ -608,7 +649,7 @@
           onClick: () => onPick(f, row),
         }, ...(Array.isArray(inner) ? inner : [inner]));
         row.dataset.path = f.path;
-        nav.append(row);
+        parent.append(row);
       }
     }
   }
@@ -1556,11 +1597,19 @@
         } else if (opts.selectable) {
           lead = h("input", { type: "checkbox", class: "branch-check",
             checked: selected.has(b.name),
-            onChange: (e) => toggle(b.name, e.target.checked) });
+            onChange: (e) => { e.stopPropagation(); toggle(b.name, e.target.checked); },
+            onClick: (e) => e.stopPropagation() });
         } else {
           lead = h("span", { class: "branch-check-spacer" });
         }
-        return h("div", { class: "branch-row" + (b.isCurrent ? " is-current" : "") + (selected.has(b.name) ? " is-checked" : "") },
+        // Whole row is clickable to open the diff (mirrors stash row UX).
+        // Checkbox and action buttons stop propagation so they don't also
+        // fire the row click. Current branch has no diff target — no row
+        // onClick there.
+        return h("div", {
+          class: "branch-row" + (b.isCurrent ? " is-current" : "") + (selected.has(b.name) ? " is-checked" : "") + (opts.onActivate ? " is-clickable" : ""),
+          onClick: opts.onActivate ? () => opts.onActivate(b) : undefined,
+        },
           lead,
           h("div", { class: "branch-main" },
             h("div", { class: "branch-line" },
@@ -1573,7 +1622,7 @@
               b.subject && h("span", { class: "branch-subject", title: b.subject }, b.subject),
             ),
           ),
-          h("span", { class: "branch-actions" }, ...opts.actions),
+          h("span", { class: "branch-actions", onClick: (e) => e.stopPropagation() }, ...opts.actions),
         );
       }
 
@@ -1610,9 +1659,9 @@
       for (const b of filteredLocal) {
         list.append(branchRow(b, {
           selectable: !b.isCurrent,
+          onActivate: !b.isCurrent ? diffBranch : null,
           tags: h("span", { class: "branch-tags" }, mergeBadge(b), remoteBadge(b), trackBadge(b)),
           actions: [
-            !b.isCurrent && h("button", { class: "btn-mini", onClick: () => diffBranch(b) }, "Diff"),
             !b.isCurrent && h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Switch"),
             !b.isCurrent && h("button", { class: "btn-mini danger", onClick: () => deleteBranch(b.name) }, "Delete"),
           ].filter(Boolean),
@@ -1626,9 +1675,9 @@
         for (const b of filteredRemote) {
           list.append(branchRow(b, {
             selectable: true,
+            onActivate: diffBranch,
             tags: null,
             actions: [
-              h("button", { class: "btn-mini", onClick: () => diffBranch(b) }, "Diff"),
               h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Check out"),
               h("button", { class: "btn-mini danger", onClick: () => deleteRemoteBranch(b) }, "Delete remote"),
             ],
