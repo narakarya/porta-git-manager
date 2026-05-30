@@ -649,7 +649,15 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
 }
-.branches-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.branches-list-wrap {
+  flex: 1;
+  min-height: 0;            /* critical for nested flex scroll */
+  display: flex;
+  flex-direction: column;
+}
+.branch-facets,
+.bulk-bar { flex-shrink: 0; }
+.branches-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; }
 .branch-section-title {
   font-size: 9px;
   font-weight: 700;
