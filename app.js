@@ -221,18 +221,52 @@
             if (row) row.classList.add("is-active");
           };
           const totals = files.reduce((acc, f) => { const s = gmFileStats(f); acc.add += s.add; acc.del += s.del; return acc; }, { add: 0, del: 0 });
-          const allRow = h("button", { class: "diff-tree-row diff-tree-all is-active",
-            onClick: () => { setActive(allRow); showList(files); } },
-            h("span", { class: "diff-tree-name" }, files.length + " files changed"),
-            h("span", { class: "diff-tree-stat" },
-              h("span", { class: "stat-add" }, "+" + totals.add),
-              h("span", { class: "stat-del" }, "−" + totals.del)),
-          );
-          activeRow = allRow;
-          nav.append(allRow);
-          gmRenderFileTree(nav, files, {
-            onPick: (f, row) => { setActive(row); showList([f]); },
+
+          let treeFilter = "";
+          const filterInput = h("input", {
+            class: "diff-tree-filter",
+            placeholder: "Filter files…",
+            onInput: (e) => { treeFilter = e.target.value; paintTree(); },
           });
+          const toolbar = h("div", { class: "diff-tree-toolbar" },
+            filterInput,
+            h("span", { class: "diff-tree-totals" },
+              h("span", { class: "stat-add" }, "+" + totals.add),
+              h("span", { class: "stat-del" }, "−" + totals.del),
+            ),
+          );
+          const treeBody = h("div", { class: "diff-tree-body" });
+
+          function paintTree() {
+            treeBody.innerHTML = "";
+            const visible = gmFilterFiles(files, treeFilter);
+            const allRow = h("button", {
+              class: "diff-tree-row diff-tree-all" + (!treeFilter && (!activeRow || activeRow === null) ? " is-active" : ""),
+              onClick: () => { setActive(allRow); showList(visible); },
+            },
+              h("span", { class: "diff-tree-name" },
+                visible.length + (treeFilter ? " of " + files.length : "") + " files changed"),
+              h("span", { class: "diff-tree-stat" },
+                h("span", { class: "stat-add" }, "+" + totals.add),
+                h("span", { class: "stat-del" }, "−" + totals.del)),
+            );
+            if (!activeRow) {
+              activeRow = allRow;
+              allRow.classList.add("is-active");
+            }
+            treeBody.append(allRow);
+            if (visible.length === 0) {
+              treeBody.append(h("div", { class: "diff-tree-empty" }, "No files match"));
+              return;
+            }
+            gmRenderFileTree(treeBody, visible, {
+              onPick: (f, row) => { setActive(row); showList([f]); },
+            });
+          }
+          paintTree();
+
+          nav.append(toolbar);
+          nav.append(treeBody);
           main = h("div", { class: "diff-modal-main" }, nav, content);
         } else {
           main = h("div", { class: "diff-modal-main is-single" }, content);
@@ -524,6 +558,7 @@
   function defaultDiffRow(f) {
     const st = gmFileStats(f);
     return [
+      gmFileIcon(f.path),
       h("span", { class: "diff-tree-name", title: f.path }, f._name),
       h("span", { class: "diff-tree-stat" },
         st.add ? h("span", { class: "stat-add" }, "+" + st.add) : null,
