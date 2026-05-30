@@ -4,6 +4,14 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.10] — 2026-05-30
+
+### Fixed
+- **Status tab untracked folders are clearer and removable.** Untracked entries now show a `new` badge instead of a raw `?`, preview actions say `Stage all` / `Delete`, and deleting an untracked folder removes the selected folder from disk including ignored contents after confirmation.
+
+### Changed
+- **File tree affordances are more explicit.** Expand/collapse folder rows now consistently use a pointer cursor, visible folder icon, chevron, hover/focus states, and stable status sizing.
+
 ## [0.7.9] — 2026-05-30
 
 ### Fixed

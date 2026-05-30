@@ -598,7 +598,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
   user-select: none;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   padding-top: 3px;
   padding-bottom: 3px;
   font-size: 11px;
@@ -613,6 +613,28 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
   opacity: 0.7;
 }
 .diff-tree-dir:hover .tree-chev { opacity: 1; }
+.tree-folder-icon {
+  width: 13px;
+  height: 10px;
+  flex: 0 0 13px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  opacity: 0.7;
+  position: relative;
+}
+.tree-folder-icon::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: -4px;
+  width: 6px;
+  height: 4px;
+  border: 1px solid currentColor;
+  border-bottom: 0;
+  border-radius: 2px 2px 0 0;
+}
+.diff-tree-dir:hover .tree-folder-icon,
+.diff-tree-dir.is-collapsed .tree-folder-icon { opacity: 1; }
 .diff-tree-children.is-collapsed { display: none; }
 
 /* Branch row clickable variant — whole row opens diff (Diff button gone). */
@@ -1294,9 +1316,11 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
   background: transparent;
   color: var(--text-mute);
 }
-.diff-tree-dir { color: var(--text-dim); font-size: 11px; cursor: default; }
+.diff-tree-dir { color: var(--text-dim); font-size: 11px; cursor: pointer; }
 .diff-tree-file { cursor: pointer; }
-.diff-tree-file:hover { background: var(--bg-hover); color: var(--text); }
+.diff-tree-file:hover,
+.diff-tree-file:focus-visible { background: var(--bg-hover); color: var(--text); }
+.diff-tree-file:focus-visible { outline: 1px solid rgba(96, 165, 250, 0.45); outline-offset: -1px; }
 .diff-tree-row.is-active { background: rgba(96, 165, 250, 0.14); color: var(--text); }
 .diff-tree-all { font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); margin-bottom: 4px; }
 .diff-tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1460,10 +1484,17 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 }
 .status-list .diff-tree-file .file-status {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
-  width: 14px;
+  min-width: 28px;
+  height: 16px;
+  line-height: 15px;
   text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 .status-list .diff-tree-file.status-modified .file-status { color: var(--amber); }
 .status-list .diff-tree-file.status-added    .file-status { color: var(--emerald); }
@@ -1483,6 +1514,7 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   transition: opacity 0.1s;
 }
 .status-list .diff-tree-file:hover .row-actions,
+.status-list .diff-tree-file:focus-visible .row-actions,
 .status-list .diff-tree-file.is-selected .row-actions { opacity: 1; }
 .status-list .diff-tree-file.is-selected {
   background: var(--bg-selected);

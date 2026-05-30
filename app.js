@@ -664,6 +664,7 @@
    *   renderRow(file, depth): Node,    // builds and returns the file row inner content;
    *                                    // MUST NOT attach its own click handler
    *                                    // (we attach onPick to the wrapper button)
+   *   keyFor(file): string,            // optional stable row key for selection
    * }
    */
   function gmRenderFileTree(nav, files, opts) {
@@ -682,9 +683,10 @@
         const dirRow = h("div", {
           class: "diff-tree-row diff-tree-dir",
           style: { paddingLeft: (depth * 12 + 6) + "px" },
-          title: dir.name,
+          title: "Expand/collapse " + dir.name + "/",
         },
           chev,
+          h("span", { class: "tree-folder-icon", ariaHidden: "true" }),
           h("span", { class: "diff-tree-name" }, dir.name + "/"),
         );
         const childWrap = h("div", { class: "diff-tree-children" });
@@ -699,12 +701,14 @@
       }
       for (const f of n.files) {
         const inner = renderRow(f, depth);
+        const statusCls = f.code ? " status-" + gmStatusClass(f.code) : "";
         const row = h("button", {
-          class: "diff-tree-row diff-tree-file",
+          class: "diff-tree-row diff-tree-file" + statusCls,
           style: { paddingLeft: (depth * 12 + 10) + "px" },
           onClick: () => onPick(f, row),
         }, ...(Array.isArray(inner) ? inner : [inner]));
         row.dataset.path = f.path;
+        row.dataset.key = opts.keyFor ? opts.keyFor(f) : f.path;
         parent.append(row);
       }
     }
@@ -1017,7 +1021,12 @@
               h("button", { class: "hunk-action danger", onClick: () => discard({ path: filePath, submodule: true }) }, "Discard all"),
             );
           }
-        } else if (source === "unstaged" || source === "untracked") {
+        } else if (source === "untracked") {
+          actions.append(
+            h("button", { class: "hunk-action",        onClick: () => stageOneHunk(filePath, hunk, source) }, "Stage all"),
+            h("button", { class: "hunk-action danger", onClick: () => discardOneHunk(filePath, hunk, source) }, "Delete"),
+          );
+        } else if (source === "unstaged") {
           actions.append(
             h("button", { class: "hunk-action",        onClick: () => stageOneHunk(filePath, hunk, source) }, "Stage hunk"),
             h("button", { class: "hunk-action danger", onClick: () => discardOneHunk(filePath, hunk, source) }, "Discard"),
@@ -1116,16 +1125,7 @@
 
     async function discardOneHunk(filePath, hunk, source) {
       if (source === "untracked") {
-        const ok = await ui.confirm({
-          title: "Delete untracked file?",
-          body: `Remove ${filePath} from disk. There's no undo.`,
-          danger: true, okLabel: "Delete",
-        });
-        if (!ok) return;
-        const r = await sh("rm -rf " + quote(filePath));
-        if (r.code === 0) { ui.toast("Deleted " + filePath, "success"); await refresh(); }
-        else ui.toast(r.stderr || "Delete failed", "error", 5000);
-        return;
+        return deleteUntracked({ path: filePath });
       }
       const ok = await ui.confirm({
         title: "Discard hunk?",
@@ -1138,11 +1138,32 @@
       else ui.toast(r.stderr || "Discard hunk failed", "error", 5000);
     }
 
+    async function deleteUntracked(file) {
+      const isDir = /\/$/.test(file.path || "");
+      const label = isDir ? "folder" : "file";
+      const ok = await ui.confirm({
+        title: "Delete untracked " + label + "?",
+        body: `Remove ${file.path} from disk. This also removes ignored files inside it. There's no undo.`,
+        danger: true,
+        okLabel: "Delete",
+      });
+      if (!ok) return;
+      const target = String(file.path || "").replace(/\/+$/, "") || file.path;
+      const r = await sh("rm -rf -- " + quote(target));
+      if (r.code === 0) {
+        ui.toast("Deleted " + file.path, "success");
+        await refresh();
+      } else {
+        ui.toast(r.stderr || "Delete failed", "error", 5000);
+        await refresh();
+      }
+    }
+
     async function selectFile(file, source, diffNode) {
       state.selectedFile = file ? `${source}:${file.path}` : null;
       lastDiffPath = file?.path;
       lastDiffSource = source;
-      document.querySelectorAll('.pane[data-pane="status"] .file-row').forEach((row) => {
+      document.querySelectorAll('.pane[data-pane="status"] .diff-tree-file').forEach((row) => {
         row.classList.toggle("is-selected", row.dataset.key === state.selectedFile);
       });
       if (!file) {
@@ -1203,6 +1224,10 @@
       await refresh();
     }
     async function discard(file) {
+      if (file.untracked) {
+        await deleteUntracked(file);
+        return;
+      }
       const ok = await ui.confirm({
         title: "Discard changes?",
         body: `This will permanently revert ${file.path}. There's no undo for unstaged work.`,
@@ -1220,28 +1245,9 @@
         await refresh();
         return;
       }
-      if (file.untracked) {
-        let r = await git("clean -fd -- " + quote(file.path));
-        if (r.code !== 0) { ui.toast(r.stderr || "Discard failed", "error", 5000); await refresh(); return; }
-        // `git clean -fd` refuses to delete an untracked dir that's its own git
-        // repo: it prints "Skipping repository <path>" and exits 0, so a naive
-        // success toast lies. Detect it and force-remove with -ff behind a
-        // second, explicit confirm (this nukes the nested repo's history too).
-        if (/Skipping repository/i.test((r.stdout || "") + (r.stderr || ""))) {
-          const force = await ui.confirm({
-            title: "Folder contains a git repository",
-            body: `${file.path} has its own .git and was left untouched. Force-delete it and everything inside? This permanently removes the nested repository, including any uncommitted work in it.`,
-            danger: true, okLabel: "Force delete",
-          });
-          if (!force) { await refresh(); return; }
-          r = await git("clean -ffd -- " + quote(file.path));
-          if (r.code !== 0) { ui.toast(r.stderr || "Force delete failed", "error", 5000); await refresh(); return; }
-        }
-      } else {
-        let r = await git("restore -- " + quote(file.path));
-        if (r.code !== 0) r = await git("checkout -- " + quote(file.path));
-        if (r.code !== 0) { ui.toast(r.stderr || "Discard failed", "error", 5000); await refresh(); return; }
-      }
+      let r = await git("restore -- " + quote(file.path));
+      if (r.code !== 0) r = await git("checkout -- " + quote(file.path));
+      if (r.code !== 0) { ui.toast(r.stderr || "Discard failed", "error", 5000); await refresh(); return; }
       ui.toast("Discarded changes", "success");
       await refresh();
     }
@@ -1267,12 +1273,13 @@
     function statusTreeRow(file, source, diffNode, filter) {
       const isStaged = source === "staged";
       const isSubmodule = source === "submodule";
+      const statusText = file.untracked ? "new" : file.code;
       const statusTitle = file.submodule
         ? "Submodule: " + (file.submoduleSummary || "dirty")
         : file.untracked ? "Untracked" : "";
       return [
         gmFileIcon(file.path),
-        h("span", { class: "file-status status-" + gmStatusClass(file.code), title: statusTitle }, file.code),
+        h("span", { class: "file-status status-" + gmStatusClass(file.code), title: statusTitle }, statusText),
         h("span", { class: "file-name", title: file.path,
           html: window.GMText.highlightMatches(file._name || file.path.split("/").pop(), filter || "") }),
         h("span", { class: "row-actions" },
@@ -1349,6 +1356,7 @@
           return;
         }
         gmRenderFileTree(list, items, {
+          keyFor: (f) => `${sourceFor(f)}:${f.path}`,
           renderRow: (f, _depth) => statusTreeRow(f, sourceFor(f), diffNode, filter),
           onPick: (f, row) => {
             const source = sourceFor(f);
