@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.29] — 2026-05-30
+
+### Fixed
+- **HTML preview now inlines more local image assets.** Relative image sources, lazy-load attributes, and inline `url(...)` backgrounds are resolved from the previewed HTML file and embedded as data URLs before rendering in the sandboxed iframe.
+
 ## [0.7.28] — 2026-05-30
 
 ### Fixed

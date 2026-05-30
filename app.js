@@ -1101,7 +1101,7 @@
       }
       const r = await sh("head -c 524288 " + quote(path));
       if (r.code !== 0) return null;
-      const content = kind === "html" ? await inlineHtmlPreviewImages(r.stdout || "", path) : (r.stdout || "");
+      const content = kind === "html" ? await inlineHtmlPreviewAssets(r.stdout || "", path) : (r.stdout || "");
       return {
         kind,
         path,
@@ -1146,20 +1146,25 @@
       return "data:" + mime + ";base64," + r.stdout.replace(/\s+/g, "");
     }
 
-    async function inlineHtmlPreviewImages(html, baseFile) {
-      const attrRe = /\b(src|srcset)\s*=\s*(?:(["'])(.*?)\2|([^\s>]+))/gi;
+    async function inlineHtmlPreviewAssets(html, baseFile) {
+      const attrRe = /\b(src|srcset|data-src|data-srcset|data-original|data-lazy-src|data-lazy-srcset)\s*=\s*(?:(["'])(.*?)\2|([^\s>]+))/gi;
       let out = "", last = 0, match;
       while ((match = attrRe.exec(html))) {
         const attr = match[1].toLowerCase();
         const raw = match[3] != null ? match[3] : match[4];
-        const replacement = attr === "srcset"
+        const replacement = /srcset$/.test(attr)
           ? await inlineHtmlSrcset(raw, baseFile)
           : await inlineHtmlSrc(raw, baseFile);
         out += html.slice(last, match.index);
-        out += replacement ? attr + '="' + replacement + '"' : match[0];
+        if (replacement) {
+          const outAttr = attr.startsWith("data-") ? attr.slice(5) : attr;
+          out += outAttr + '="' + replacement + '"';
+        } else {
+          out += match[0];
+        }
         last = match.index + match[0].length;
       }
-      return out + html.slice(last);
+      return inlineHtmlStyleUrls(out + html.slice(last), baseFile);
     }
 
     async function inlineHtmlSrc(raw, baseFile) {
@@ -1180,6 +1185,20 @@
         out.push([dataUrl || url, ...bits].join(" "));
       }
       return changed ? out.join(", ") : null;
+    }
+
+    async function inlineHtmlStyleUrls(html, baseFile) {
+      const re = /url\(\s*(["']?)([^"')]+)\1\s*\)/gi;
+      let out = "", last = 0, match;
+      while ((match = re.exec(html))) {
+        const raw = match[2];
+        const asset = resolvePreviewAsset(baseFile, raw);
+        const dataUrl = asset ? await imageDataUrlForPath(asset) : null;
+        out += html.slice(last, match.index);
+        out += dataUrl ? 'url("' + dataUrl + '")' : match[0];
+        last = match.index + match[0].length;
+      }
+      return out + html.slice(last);
     }
 
     /**
