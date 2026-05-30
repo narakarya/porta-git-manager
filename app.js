@@ -1796,23 +1796,58 @@
     async function loadLog(filter) {
       const sep = "\x1f";
       const grep = filter ? " --grep=" + quote(filter) + " -i" : "";
-      const r = await git("log --no-color" + grep + " --pretty=format:" + quote("%h" + sep + "%s" + sep + "%an" + sep + "%ar" + sep + "%H") + " -n 100");
+      const r = await git("log --no-color" + grep + " --pretty=format:" + quote("%h" + sep + "%s" + sep + "%an" + sep + "%ar" + sep + "%H" + sep + "%p") + " -n 100");
       if (r.code !== 0) return [];
       return r.stdout.split("\n").filter(Boolean).map((line) => {
-        const [sha, msg, author, when, fullSha] = line.split(sep);
-        return { sha, msg, author, when, fullSha };
+        const [sha, msg, author, when, fullSha, parents] = line.split(sep);
+        return { sha, msg, author, when, fullSha, parents: (parents || "").trim() };
       });
     }
 
     async function renderDetail(detailNode, commit) {
       detailNode.innerHTML = "";
-      const header = h("div", { class: "commit-header" },
-        h("div", { class: "row" }, h("span", { class: "label" }, "sha"), h("span", { class: "val sha" }, commit.fullSha)),
-        h("div", { class: "row" }, h("span", { class: "label" }, "author"), h("span", { class: "val" }, `${commit.author} · ${commit.when}`)),
-        h("div", { class: "row" }, h("span", { class: "label" }, "msg"), h("span", { class: "val msg" }, commit.msg)),
-      );
-      detailNode.append(header);
 
+      // Card: subject + (optional) body + separator + meta + sha pills.
+      const subject = h("div", { class: "subject" }, commit.msg);
+      const card = h("div", { class: "commit-card" }, subject);
+
+      // Body — fetched separately because multi-line %b can't ride through
+      // the log-format's NUL/sep parsing reliably.
+      const bodyRes = await git("show -s --format=%b " + quote(commit.sha));
+      const bodyText = (bodyRes.code === 0 ? bodyRes.stdout : "").trimEnd();
+      if (bodyText) card.append(h("div", { class: "body" }, bodyText));
+
+      card.append(h("div", { class: "sep" }));
+
+      // Absolute timestamp goes in the meta line's title tooltip.
+      const absRes = await git("show -s --format=%ai " + quote(commit.sha));
+      const absDate = (absRes.code === 0 ? absRes.stdout : "").trim();
+
+      card.append(h("div", { class: "meta" },
+        h("span", null, commit.author),
+        h("span", null, "·"),
+        h("span", { title: absDate }, commit.when),
+      ));
+
+      const parents = (commit.parents || "").split(/\s+/).filter(Boolean);
+      const shaPill = h("span", { class: "commit-sha-pill" }, commit.sha);
+      const copyBtn = h("button", { class: "row-action", title: "Copy full SHA",
+        onClick: async (e) => {
+          e.stopPropagation();
+          try { await navigator.clipboard.writeText(commit.fullSha); ui.toast("Copied SHA", "success", 1200); }
+          catch (_) { ui.toast("Copy failed", "error"); }
+        } }, "copy");
+      const pillRow = h("div", { class: "pill-row" }, shaPill, copyBtn);
+      for (const p of parents) {
+        pillRow.append(h("span", { class: "parent-label" }, "parent:"));
+        pillRow.append(h("span", { class: "commit-sha-pill" }, p));
+      }
+      card.append(pillRow);
+
+      detailNode.append(card);
+
+      // Diff (still raw line-classed for now — Task 16 will replace with
+      // gmParseDiffDoc + gmRenderDiffDoc for gutter/syntax/word-diff).
       const diffWrap = h("div");
       detailNode.append(diffWrap);
       diffWrap.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
@@ -1824,7 +1859,7 @@
         else if (line.startsWith("@@")) cls = "diff-hunk";
         else if (line.startsWith("+")) cls = "diff-add";
         else if (line.startsWith("-")) cls = "diff-del";
-        diffWrap.append(h("span", { class: "diff-line " + cls }, line || " "));
+        diffWrap.append(h("span", { class: "diff-line " + cls }, line || " "));
       }
     }
 
