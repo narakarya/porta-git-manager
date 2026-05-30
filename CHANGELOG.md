@@ -4,6 +4,14 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.16] — 2026-05-30
+
+### Fixed
+- **"Discard all" now discards everything again.** A v0.7.14 refactor narrowed it to unstaged changes only, so staged edits and `git add`-ed new files were left behind (and the button greyed out once everything was staged). It once more reverts staged + unstaged changes and removes untracked files, matching its label.
+
+### Changed
+- **Folder icons in the file tree are real SVG glyphs.** The hand-drawn CSS folder box is replaced with clean Lucide folder marks that open/close as you expand a directory, consistent with the new brand file-type icons.
+
 ## [0.7.15] — 2026-05-30
 
 ### Added

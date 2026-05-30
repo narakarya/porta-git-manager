@@ -647,27 +647,10 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
 .diff-tree-dir:hover .tree-chev { opacity: 1; }
 .tree-folder-icon {
   width: 15px;
-  height: 11px;
+  height: 15px;
   flex: 0 0 15px;
-  border: 1px solid currentColor;
-  border-radius: 2px 2px 2px 2px;
-  background: rgba(96, 165, 250, 0.12);
   color: var(--blue);
-  opacity: 0.72;
-  position: relative;
-  margin-top: 2px;
-}
-.tree-folder-icon::before {
-  content: "";
-  position: absolute;
-  left: 1px;
-  top: -4px;
-  width: 7px;
-  height: 4px;
-  border: 1px solid currentColor;
-  border-bottom: 0;
-  border-radius: 2px 2px 0 0;
-  background: var(--bg-pane);
+  opacity: 0.78;
 }
 .diff-tree-dir:hover .tree-folder-icon,
 .diff-tree-dir.is-collapsed .tree-folder-icon { opacity: 1; }

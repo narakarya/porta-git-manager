@@ -700,6 +700,7 @@
         // in the DOM — caller doesn't need to track anything; if the
         // caller fully re-renders the tree, folders reset to expanded.
         const chev = h("span", { class: "tree-chev" }, "▾");
+        const folderIcon = gmFolderIcon(true); // rows start expanded → open folder
         const dirFiles = collectFiles(dir);
         const dirRow = h("div", {
           class: "diff-tree-row diff-tree-dir",
@@ -707,7 +708,7 @@
           title: onDirPick ? "Click to expand/collapse. Cmd/Ctrl-click to select folder." : "Expand/collapse " + dir.name + "/",
         },
           chev,
-          h("span", { class: "tree-folder-icon", ariaHidden: "true" }),
+          folderIcon,
           h("span", { class: "diff-tree-name" }, dir.name + "/"),
         );
         const childWrap = h("div", { class: "diff-tree-children" });
@@ -719,6 +720,7 @@
           const collapsed = childWrap.classList.toggle("is-collapsed");
           dirRow.classList.toggle("is-collapsed", collapsed);
           chev.textContent = collapsed ? "▸" : "▾";
+          folderIcon._use.setAttribute("href", collapsed ? "#ficon-folder" : "#ficon-folder-open");
         });
         parent.append(dirRow);
         parent.append(childWrap);
@@ -737,6 +739,19 @@
         parent.append(row);
       }
     }
+  }
+
+  /** Return an <svg.tree-folder-icon> for a directory row. `open` swaps the glyph. */
+  function gmFolderIcon(open) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "tree-folder-icon");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", open ? "#ficon-folder-open" : "#ficon-folder");
+    svg.appendChild(use);
+    svg._use = use;
+    return svg;
   }
 
   /** Return an <svg.ficon> referencing the appropriate sprite symbol by file extension. */
@@ -1542,7 +1557,7 @@
       ]);
       appendSection("Changes", unstaged, (f) => f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged", [
         h("button", { class: "act-all", onClick: stageAll, disabled: unstaged.length === 0 }, "Stage all"),
-        h("button", { class: "act-all danger", onClick: () => discardStatusEntries(statusEntriesFrom({ staged: [], unstaged: status.unstaged }), "all changes"), disabled: status.unstaged.length === 0 }, "Discard all"),
+        h("button", { class: "act-all danger", onClick: () => discardStatusEntries(statusEntriesFrom(status), "all changes"), disabled: status.staged.length + status.unstaged.length === 0 }, "Discard all"),
       ]);
 
       const split = h("div", { class: "status-split" }, list, diffNode);
