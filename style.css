@@ -1319,3 +1319,35 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .diff-tree-file.is-active .ficon,
 .file-row:hover .ficon,
 .file-row.is-selected .ficon { color: var(--text); }
+
+/* Status pane reuses the diff tree primitive but needs a touch more
+   breathing room for the per-file actions to fit on the right. */
+.status-list .diff-tree-file {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  gap: 8px;
+}
+.status-list .diff-tree-file .file-status {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  width: 14px;
+  text-align: center;
+}
+.status-list .diff-tree-file.status-modified .file-status { color: var(--amber); }
+.status-list .diff-tree-file.status-added    .file-status { color: var(--emerald); }
+.status-list .diff-tree-file.status-deleted  .file-status { color: var(--red); }
+.status-list .diff-tree-file.status-renamed  .file-status { color: var(--blue); }
+.status-list .diff-tree-file.status-untracked .file-status { color: var(--text-mute); }
+.status-list .diff-tree-file .row-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.status-list .diff-tree-file:hover .row-actions,
+.status-list .diff-tree-file.is-selected .row-actions { opacity: 1; }
+.status-list .diff-tree-file.is-selected {
+  background: var(--bg-selected);
+}

@@ -894,33 +894,21 @@
     }
 
     // ── Render ────────────────────────────────────────────────────────────
-    function fileLabel(file, filter) {
-      const { dir, name } = splitPath(file.path);
-      const hl = window.GMText.highlightMatches;
-      return h("span", { class: "file-path", title: file.path },
-        dir && h("span", { class: "file-dir", html: hl(dir, filter || "") }),
-        h("span", { class: "file-name", html: hl(name, filter || "") }),
-      );
-    }
-
-    function renderFileRow(file, source, diffNode, filter) {
-      const key = `${source}:${file.path}`;
+    /** Build a Status-flavoured tree row's inner content (icon, status letter, name, actions). */
+    function statusTreeRow(file, source, diffNode, filter) {
       const isStaged = source === "staged";
-      const row = h("div", {
-        class: "file-row " + statusClass(file.code) + (state.selectedFile === key ? " is-selected" : ""),
-        dataset: { key },
-        onClick: () => selectFile(file, source, diffNode),
-      },
-        h("span", { class: "file-status" }, file.code),
-        fileLabel(file, filter),
+      return [
+        gmFileIcon(file.path),
+        h("span", { class: "file-status status-" + statusClass(file.code) }, file.code),
+        h("span", { class: "file-name", title: file.path,
+          html: window.GMText.highlightMatches(file._name || file.path.split("/").pop(), filter || "") }),
         h("span", { class: "row-actions" },
           isStaged
             ? h("button", { class: "row-action", onClick: (e) => { e.stopPropagation(); unstage(file.path); } }, "unstage")
             : h("button", { class: "row-action", onClick: (e) => { e.stopPropagation(); stage(file.path); } }, "stage"),
           !isStaged && h("button", { class: "row-action danger", onClick: (e) => { e.stopPropagation(); discard(file); } }, "discard"),
         ),
-      );
-      return row;
+      ];
     }
 
     async function render() {
@@ -976,29 +964,32 @@
 
       const list = h("div", { class: "status-list" });
 
-      list.append(
-        h("div", { class: "file-section-title" },
-          "Staged",
-          h("span", { class: "count" }, String(staged.length)),
-        ),
-      );
-      if (staged.length === 0) {
-        list.append(h("div", { class: "empty-files" }, "Nothing staged"));
-      } else {
-        staged.forEach((f) => list.append(renderFileRow(f, "staged", diffNode, filter)));
+      function appendSection(label, items, sourceFor) {
+        list.append(h("div", { class: "file-section-title" },
+          label,
+          h("span", { class: "count" }, String(items.length)),
+        ));
+        if (items.length === 0) {
+          list.append(h("div", { class: "empty-files" },
+            label === "Staged" ? "Nothing staged"
+              : status.unstaged.length === 0 ? "Working tree clean" : "Nothing matches filter"));
+          return;
+        }
+        gmRenderFileTree(list, items, {
+          renderRow: (f, _depth) => statusTreeRow(f, sourceFor(f), diffNode, filter),
+          onPick: (f, row) => {
+            const source = sourceFor(f);
+            const key = `${source}:${f.path}`;
+            state.selectedFile = key;
+            document.querySelectorAll(".diff-tree-file.is-selected").forEach((r) => r.classList.remove("is-selected"));
+            row.classList.add("is-selected");
+            selectFile(f, source, diffNode);
+          },
+        });
       }
 
-      list.append(
-        h("div", { class: "file-section-title" },
-          "Changes",
-          h("span", { class: "count" }, String(unstaged.length)),
-        ),
-      );
-      if (unstaged.length === 0) {
-        list.append(h("div", { class: "empty-files" }, status.unstaged.length === 0 ? "Working tree clean" : "Nothing matches filter"));
-      } else {
-        unstaged.forEach((f) => list.append(renderFileRow(f, f.untracked ? "untracked" : "unstaged", diffNode, filter)));
-      }
+      appendSection("Staged", staged, () => "staged");
+      appendSection("Changes", unstaged, (f) => f.untracked ? "untracked" : "unstaged");
 
       const split = h("div", { class: "status-split" }, list, diffNode);
       node.append(split);
