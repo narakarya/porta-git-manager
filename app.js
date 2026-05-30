@@ -321,6 +321,26 @@
 
         const optsBar = hasRefetch ? h("div", { class: "diff-modal-opts" }, wsLabel, ctxSelect) : null;
 
+        // Wrap + Fullscreen — always available (no refetch dependency).
+        let wrap = false;
+        const wrapChk = h("input", {
+          type: "checkbox",
+          onChange: (e) => { wrap = e.target.checked; main.classList.toggle("is-wrap", wrap); },
+        });
+        const wrapLabel = h("label", { class: "diff-modal-opt" }, wrapChk, "Wrap");
+
+        let fullscreen = false;
+        const fsBtn = h("button", {
+          class: "btn-ghost diff-modal-fs",
+          title: "Toggle fullscreen",
+          onClick: () => {
+            fullscreen = !fullscreen;
+            card.classList.toggle("is-fullscreen", fullscreen);
+            fsBtn.textContent = fullscreen ? "Restore" : "Full";
+          },
+        }, "Full");
+        const viewOpts = h("div", { class: "diff-modal-opts" }, wrapLabel);
+
         const toggle = h("div", { class: "view-toggle" },
           h("button", {
             class: "view-toggle-btn is-active",
@@ -351,7 +371,9 @@
               subtitle && h("p", { class: "diff-modal-sub", title: subtitle }, subtitle),
             ),
             optsBar,
+            viewOpts,
             toggle,
+            fsBtn,
             h("button", { class: "btn-ghost", onClick: close }, "Close"),
           ),
           main,
@@ -929,6 +951,9 @@
      * side spills to extra rows with the shorter side blank.
      */
     function renderSplitHunkBody(wrapper, hunk, lang) {
+      // Tag the hunk for split-mode horizontal scroll (single scrollbar
+      // shared by both columns). See .hunk-split rule in style.css.
+      wrapper.classList.add("hunk-split");
       const range = window.GMDiff.parseHunkHeader(hunk.header);
       const numbered = window.GMDiff.numberHunkLines(hunk.lines, range);
       const splitRows = window.GMDiff.toSplitRows(numbered);

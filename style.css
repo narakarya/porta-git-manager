@@ -500,18 +500,38 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 .view-toggle-btn.is-active { background: rgba(96, 165, 250, 0.12); color: var(--blue); }
 
 /* ─── Split diff grid ──────────────────────────────────────────────────── */
-/* minmax(0, 1fr) (≡ min-width:0) unlocks shrinking below intrinsic
-   min-content size — otherwise a long `white-space:pre` line on either
-   side pushes both grid tracks wider than the modal, leaking past the
-   right edge. With minmax the columns stay 50/50 and long lines scroll
-   horizontally inside the code cell (overflow-x:auto below). */
-.diff-split { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
-.diff-cell { display:grid; grid-template-columns:30px minmax(0,1fr); white-space:pre; min-height:18px;
+/* Split-view grid: ONE horizontal scrollbar at the hunk level so both
+   columns scroll in sync. `width:max-content; min-width:100%` lets the
+   grid stretch to fit its widest content (triggering .hunk-split's
+   overflow-x scroll) while staying at least full-width when content is
+   short. `1fr 1fr` then splits whatever width the grid takes equally
+   between the two sides. (Previous v0.7.1 attempt used `overflow-x:auto`
+   per cell, which gave one scrollbar per line — uglier than per-hunk.) */
+.diff-split { display:grid; grid-template-columns:1fr 1fr; width:max-content; min-width:100%; }
+.hunk-split { overflow-x:auto; }
+.hunk-split::-webkit-scrollbar { height:8px; }
+.hunk-split::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:4px; }
+.diff-cell { display:grid; grid-template-columns:30px 1fr; white-space:pre; min-height:18px;
   font-family:ui-monospace,Menlo,monospace; font-size:11px; border-right:1px solid var(--border); }
 .diff-cell .diff-gutter { color:var(--text-dim); text-align:right; padding-right:6px; user-select:none; font-variant-numeric:tabular-nums; }
-.diff-cell .diff-code { padding:0 8px; overflow-x:auto; }
-.diff-cell .diff-code::-webkit-scrollbar { height:6px; }
-.diff-cell .diff-code::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:3px; }
+.diff-cell .diff-code { padding:0 8px; }
+
+/* Wrap mode (toggled via .diff-modal-main.is-wrap): cells wrap to fit,
+   no horizontal scroll. Code keeps monospace alignment but breaks on
+   any character (word-break:break-word so long identifiers wrap). */
+.diff-modal-main.is-wrap .hunk-split { overflow-x:visible; }
+.diff-modal-main.is-wrap .diff-split { width:auto; min-width:0;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.diff-modal-main.is-wrap .diff-cell { grid-template-columns:30px minmax(0,1fr); }
+.diff-modal-main.is-wrap .diff-cell .diff-code,
+.diff-modal-main.is-wrap .diff-line .diff-code { white-space:pre-wrap; word-break:break-word; }
+
+/* Fullscreen modal — expands to viewport. Reverts on toggle off. */
+.modal-card.is-fullscreen {
+  width:100vw; height:100vh; max-width:100vw; max-height:100vh;
+  border-radius:0; top:0; left:0; transform:none;
+}
+.diff-modal-fs { min-width:60px; }
 .diff-cell.diff-cell-right { border-right:0; }
 .diff-cell.diff-del .diff-code { color:var(--red); } .diff-cell.diff-del { background:var(--diff-del-bg); }
 .diff-cell.diff-add .diff-code { color:var(--emerald); } .diff-cell.diff-add { background:var(--diff-add-bg); }
