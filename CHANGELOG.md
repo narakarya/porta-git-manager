@@ -4,6 +4,18 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-05-30
+
+### Changed
+- Split-view diff now scrolls horizontally as a unit per hunk (single scrollbar shared by both columns), replacing the per-line scrollbars introduced in 0.7.1. Inner grid uses `width: max-content; min-width: 100%` to grow with content while keeping a 50/50 split. Same improvement applies to the Status tab's split view.
+
+### Added
+- **Wrap toggle** in the diff modal head. Toggles `pre-wrap` + `word-break: break-word` on diff code so long lines fold to fit the cell instead of triggering horizontal scroll. Works for both unified and split view.
+- **Fullscreen button** in the diff modal head. Expands the modal card to viewport (`100vw × 100vh`, no border-radius). Toggles back to a regular wide modal via `Restore`.
+
+### Fixed
+- Branch "Diff" now falls back to a two-arg `<branch> HEAD` diff when the three-dot `HEAD...<branch>` is empty. Previously, a branch that was created from main and never updated (while main moved forward) was labeled "unmerged" but showed "already merged or identical" when you clicked Diff — contradicting the badge. Now the modal opens with the changes HEAD carries that the branch doesn't, titled "Branch diff: ... (behind HEAD)". Only when both directions are empty does the toast still say "identical to HEAD".
+
 ## [0.7.1] — 2026-05-30
 
 ### Fixed
