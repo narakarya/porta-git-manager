@@ -4,6 +4,9 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+### Fixed
+- Split-view diff right column no longer overflows past the modal edge. Grid templates now use `minmax(0, 1fr)` so both sides stay 50/50, and long lines scroll horizontally inside each code cell instead of pushing the layout wider than its container.
+
 ## [0.7.0] — 2026-05-30
 
 First release as the standalone `narakarya/porta-git-manager` repo (extracted from `narakarya/porta`'s `extensions-bundled/git-manager/` with full commit history preserved via `git filter-repo`).
