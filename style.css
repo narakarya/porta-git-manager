@@ -939,6 +939,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
   align-items: center;
   padding: 9px 14px;
   border-left: 2px solid transparent;
+  cursor: pointer;
 }
 .stash-row + .stash-row { border-top: 1px solid var(--border); }
 .stash-row:hover { background: var(--bg-hover); }

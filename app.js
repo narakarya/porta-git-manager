@@ -1954,9 +1954,21 @@
         list.append(h("div", { class: "empty-files" }, "No stashes"));
       } else {
         for (const s of stashes) {
-          list.append(h("div", { class: "stash-row" + (selectedRefs.has(s.ref) ? " is-checked" : "") },
-            h("input", { type: "checkbox", class: "stash-check", checked: selectedRefs.has(s.ref),
-              onChange: (e) => toggle(s.ref, e.target.checked) }),
+          // Whole row is clickable to open the diff viewer. Children that have
+          // their own click semantics (checkbox + action buttons) stop the event
+          // from bubbling to the row. The "View" button is gone — the row IS the
+          // viewer affordance.
+          const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+          list.append(h("div", {
+            class: "stash-row" + (selectedRefs.has(s.ref) ? " is-checked" : ""),
+            onClick: () => show(s),
+          },
+            h("input", {
+              type: "checkbox", class: "stash-check",
+              checked: selectedRefs.has(s.ref),
+              onChange: (e) => { e.stopPropagation(); toggle(s.ref, e.target.checked); },
+              onClick: (e) => e.stopPropagation(),
+            }),
             h("span", { class: "stash-idx" }, s.ref),
             h("div", { class: "stash-main" },
               h("div", { class: "stash-line" },
@@ -1968,10 +1980,9 @@
               ),
             ),
             h("span", { class: "stash-actions" },
-              h("button", { class: "btn-mini", onClick: () => show(s) }, "View"),
-              h("button", { class: "btn-mini", onClick: () => apply(s.ref) }, "Apply"),
-              h("button", { class: "btn-mini", onClick: () => pop(s.ref) }, "Pop"),
-              h("button", { class: "btn-mini danger", onClick: () => drop(s.ref) }, "Drop"),
+              h("button", { class: "btn-mini", onClick: stop(() => apply(s.ref)) }, "Apply"),
+              h("button", { class: "btn-mini", onClick: stop(() => pop(s.ref)) }, "Pop"),
+              h("button", { class: "btn-mini danger", onClick: stop(() => drop(s.ref)) }, "Drop"),
             ),
           ));
         }
