@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.8] — 2026-05-30
+
+### Fixed
+- **Diff modal header controls are vertically centered.** Title/subtitle text, whitespace/context controls, wrap checkbox, view toggle, fullscreen, and close actions now align cleanly, with the fullscreen button no longer carrying extra visual width.
+
 ## [0.7.6] — 2026-05-30
 
 ### Fixed
