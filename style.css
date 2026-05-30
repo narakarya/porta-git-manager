@@ -66,10 +66,10 @@ code, kbd, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, 
 .tab.is-active { color: var(--text); background: rgba(96, 165, 250, 0.12); }
 
 .tab-badge { font-size:9px; font-weight:600; padding:0 5px; border-radius:8px; background:var(--bg-hover);
-  color:var(--text-mute); min-width:14px; text-align:center; line-height:14px; visibility:hidden; }
-.tab-badge.show { visibility:visible; }
+  color:var(--text-mute); min-width:14px; text-align:center; line-height:14px; display:none; }
+.tab-badge.show { display:inline-block; }
 .tab.is-active .tab-badge { background:rgba(96,165,250,.18); color:var(--blue); }
-.tab-badge.urgent { background:rgba(251,191,36,.18); color:var(--amber); visibility:visible; }
+.tab-badge.urgent { background:rgba(251,191,36,.18); color:var(--amber); }
 
 .tab-spacer { flex: 1; }
 
@@ -1181,6 +1181,40 @@ textarea.input { resize: vertical; min-height: 56px; font-family: ui-monospace, 
 .branch-check-spacer { display: inline-block; width: 13px; flex: none; }
 .branch-row.is-checked, .stash-row.is-checked { background: rgba(96, 165, 250, 0.08); }
 .branch-tag.is-onremote { color: var(--emerald); }
+
+/* Facet filter chips above the branch list. */
+.branch-facets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0 8px;
+}
+.facet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-mute);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.facet-chip:hover { color: var(--text); border-color: var(--border-hi); }
+.facet-chip.is-active { color: var(--blue); background: rgba(96, 165, 250, 0.14); border-color: rgba(96, 165, 250, 0.4); }
+.facet-chip .facet-n {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  padding: 0 5px;
+  min-width: 14px;
+  text-align: center;
+}
+.facet-chip.is-active .facet-n { color: var(--blue); background: rgba(96, 165, 250, 0.18); }
 
 .sync-action .name svg { width:13px; height:13px; opacity:.9; }
 .sync-action:focus-visible { border-color:var(--blue); }

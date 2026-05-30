@@ -1019,6 +1019,7 @@
     const pane = () => document.querySelector('.pane[data-pane="branches"]');
     let newBranchName = "";
     const selected = new Set(); // branch names ticked for bulk delete
+    let facet = "all";          // local-branch facet: all|merged|unmerged|local-only|on-remote
 
     async function loadBranches() {
       const sep = "\x1f";
@@ -1232,6 +1233,17 @@
       const hl = (s) => window.GMText.highlightMatches(s, f);
       const toggle = (name, on) => { if (on) selected.add(name); else selected.delete(name); paint(); };
 
+      // Local-branch facet predicate (chips below the search box).
+      const facetMatch = (b) => {
+        switch (facet) {
+          case "merged": return b.merged;
+          case "unmerged": return !b.merged;
+          case "local-only": return !b.hasRemote;
+          case "on-remote": return b.hasRemote;
+          default: return true;
+        }
+      };
+
       // Sync state badge (ahead/behind/gone), only meaningful with an upstream.
       function trackBadge(b) {
         if (!b.upstream) return null;
@@ -1281,6 +1293,21 @@
         );
       }
 
+      // Facet chips: quick filter over local branches by merge/publish state.
+      const facetDefs = [
+        { key: "all", label: "All", n: local.length },
+        { key: "merged", label: "Merged", n: local.filter((b) => b.merged).length },
+        { key: "unmerged", label: "Unmerged", n: local.filter((b) => !b.merged).length },
+        { key: "local-only", label: "Local-only", n: local.filter((b) => !b.hasRemote).length },
+        { key: "on-remote", label: "On remote", n: local.filter((b) => b.hasRemote).length },
+      ];
+      wrap.append(h("div", { class: "branch-facets" },
+        ...facetDefs.map((d) => h("button", {
+          class: "facet-chip" + (facet === d.key ? " is-active" : ""),
+          onClick: () => { facet = d.key; paint(); },
+        }, d.label, h("span", { class: "facet-n" }, String(d.n)))),
+      ));
+
       // Bulk-action bar appears only while something is ticked.
       if (selected.size > 0) {
         wrap.append(h("div", { class: "bulk-bar" },
@@ -1293,7 +1320,7 @@
 
       const list = h("div", { class: "branches-list" });
 
-      const filteredLocal = local.filter(match);
+      const filteredLocal = local.filter((b) => match(b) && facetMatch(b));
       list.append(h("div", { class: "branch-section-title" }, "Local", h("span", { class: "count" }, String(filteredLocal.length))));
       if (filteredLocal.length === 0) list.append(h("div", { class: "empty-files" }, "No matching local branches"));
       for (const b of filteredLocal) {
@@ -1308,7 +1335,8 @@
         }));
       }
 
-      const filteredRemote = remote.filter(match);
+      // Facets describe local branches only — hide remotes when one is active.
+      const filteredRemote = facet === "all" ? remote.filter(match) : [];
       if (filteredRemote.length > 0) {
         list.append(h("div", { class: "branch-section-title" }, "Remote", h("span", { class: "count" }, String(filteredRemote.length))));
         for (const b of filteredRemote) {

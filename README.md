@@ -15,6 +15,16 @@ pure HTML + JS + CSS that talks to Porta via `window.portaBridge`.
 | **Stash** | List, save (with message + include-untracked toggle), apply, pop, drop. Rows show the **branch chip + relative time**, parsed from the stash message *(new in 0.6.0)*. **View changes (tree-style diff viewer) and checkbox multi-select bulk drop** *(new in 0.6.2)*. |
 | **Tags** *(new in 0.3.0)* | Create lightweight or annotated tags, push to origin, delete locally, delete on origin. Filter input for finding among many. |
 
+## Branch facets + tab polish (0.6.3)
+
+- **Facet chips** above the branch list — All / Merged / Unmerged / Local-only /
+  On remote, each with a live count — quick-filter the local branches by merge
+  and publish state. Stack with the text filter; remote section hides while a
+  facet is active (facets describe local branches only).
+- **Tab badges no longer reserve empty space.** Hidden count badges used
+  `visibility:hidden` (kept their box), leaving dead space to the right of tabs
+  like Rebase. They now `display:none` when empty.
+
 ## Review & multi-select (0.6.2)
 
 - **Stash "View"** opens a read-only diff of the stash (`git stash show -p`) in a
