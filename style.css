@@ -1,5 +1,37 @@
 /* Git Manager — palette matched to Porta's dark UI. */
-@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
+/* JetBrains Mono shipped locally — Google Fonts @import was blocked in the
+   WebView's iframe context (CSP / network), so the font never loaded and
+   we fell back to the system stack. Local woff2 files ship with the
+   extension (~375 KB total for four weights) and load reliably offline. */
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   --bg:#0d0d0f; --bg-pane:#131316; --bg-card:#1a1a1c; --bg-input:#08080a;

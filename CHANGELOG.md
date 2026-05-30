@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.6] — 2026-05-30
+
+### Fixed
+- **JetBrains Mono now actually applies.** The 0.7.5 attempt loaded the font via `@import` from Google Fonts, but the WebView's iframe context blocked the external request — the font never arrived and the system mono stack kept rendering. WOFF2 files now ship locally in `fonts/` (~375 KB for Regular/Medium/SemiBold/Bold) via `@font-face` declarations. Loads instantly, works offline, no repeated downloads.
+
 ## [0.7.5] — 2026-05-30
 
 ### Added
