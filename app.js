@@ -552,8 +552,10 @@
           const r = rows[k], next = rows[k + 1];
           if (r.kind === "del" && next && next.kind === "add") {
             const d = window.GMDiff.wordDiff(r.text, next.text);
-            r._wd = d.del; r._wd.cls = "wd-del";
-            next._wd = d.add; next._wd.cls = "wd-add";
+            if (d) {
+              r._wd = d.del; r._wd.cls = "wd-del";
+              next._wd = d.add; next._wd.cls = "wd-add";
+            }
           }
         }
         for (const r of rows) {
@@ -1018,8 +1020,10 @@
         const r = rows[k], next = rows[k + 1];
         if (r.kind === "del" && next && next.kind === "add") {
           const d = window.GMDiff.wordDiff(r.text, next.text);
-          r._wd = d.del; r._wd.cls = "wd-del";
-          next._wd = d.add; next._wd.cls = "wd-add";
+          if (d) {
+            r._wd = d.del; r._wd.cls = "wd-del";
+            next._wd = d.add; next._wd.cls = "wd-add";
+          }
         }
       }
       for (const r of rows) {
@@ -1390,6 +1394,28 @@
           merged: merged.has(name),
         };
       });
+      // Content-identical-to-HEAD detection. Two refs hold identical working
+      // content iff their tree objects match — independent of commit history.
+      // One `rev-parse` resolves HEAD's tree plus every branch's tree in a
+      // single call (O(1) git invocations, not one diff per branch), so a
+      // branch whose tree equals HEAD's carries nothing HEAD lacks: deleting
+      // it loses no work even when `git branch --merged` calls it unmerged
+      // (divergent history that happens to land on the same tree). This is a
+      // strictly stronger signal than `merged` (which is ancestry-based and
+      // still true for branches sitting *behind* a moved-on HEAD).
+      const treeRefs = all.filter((b) => !b.name.endsWith("/HEAD"));
+      if (treeRefs.length) {
+        const args = ["HEAD^{tree}"].concat(treeRefs.map((b) => b.name + "^{tree}"));
+        const tr = await git("rev-parse " + args.map(quote).join(" "));
+        if (tr.code === 0) {
+          const trees = tr.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
+          const headTree = trees[0];
+          // rev-parse emits one line per arg in order; trees[i+1] ↔ treeRefs[i].
+          if (headTree && trees.length === treeRefs.length + 1) {
+            treeRefs.forEach((b, i) => { b.identical = trees[i + 1] === headTree; });
+          }
+        }
+      }
       const localList = all.filter((b) => !b.isRemote);
       const remoteList = all.filter((b) => b.isRemote && !b.name.endsWith("/HEAD"));
       // Short names that exist on a remote (strip "remotes/<remote>/"), so we
@@ -1617,6 +1643,7 @@
       // Local-branch facet predicate (chips below the search box).
       const facetMatch = (b) => {
         switch (facet) {
+          case "identical": return b.identical;
           case "merged": return b.merged;
           case "unmerged": return !b.merged;
           case "local-only": return !b.hasRemote;
@@ -1646,9 +1673,18 @@
 
       function mergeBadge(b) {
         if (b.isCurrent) return null;
+        // "identical" is the strongest safe-to-delete signal: same tree as
+        // HEAD, so deleting loses nothing. Show it instead of merged/unmerged
+        // (it can be true even when `git branch --merged` reports unmerged).
+        if (b.identical) {
+          return h("span", {
+            class: "branch-tag is-identical",
+            title: "Same content as HEAD — safe to delete (no unique work).",
+          }, "identical to HEAD");
+        }
         return b.merged
-          ? h("span", { class: "branch-tag is-merged" }, "merged")
-          : h("span", { class: "branch-tag is-unmerged" }, "unmerged");
+          ? h("span", { class: "branch-tag is-merged", title: "Merged into HEAD — safe to delete." }, "merged")
+          : h("span", { class: "branch-tag is-unmerged", title: "Has commits not in HEAD — delete needs force." }, "unmerged");
       }
 
       function branchRow(b, opts) {
@@ -1694,6 +1730,7 @@
       // Facet chips: quick filter over local branches by merge/publish state.
       const facetDefs = [
         { key: "all", label: "All", n: local.length },
+        { key: "identical", label: "Identical", n: local.filter((b) => b.identical).length },
         { key: "merged", label: "Merged", n: local.filter((b) => b.merged).length },
         { key: "unmerged", label: "Unmerged", n: local.filter((b) => !b.merged).length },
         { key: "local-only", label: "Local-only", n: local.filter((b) => !b.hasRemote).length },

@@ -30,11 +30,20 @@
     return s.match(/\w+|\s+|[^\w\s]/g) || [];
   }
 
+  // Cap for the LCS table size (n*m cells). The table is allocated in full,
+  // so a long minified/lockfile/JSON line pair (e.g. ~2000 tokens/side) would
+  // build a ~64M-cell matrix and freeze the UI for ~0.3s *per line*. Above
+  // this budget we skip word-level diffing entirely; callers fall back to
+  // plain line-level syntax highlighting (cheap). 250k cells ≈ a couple ms.
+  const WORD_DIFF_MAX_CELLS = 250000;
+
   // Word-level diff via LCS. Input lines include the leading -/+ which we strip.
+  // Returns null when the line pair is too large to diff cheaply (see cap).
   function wordDiff(delText, addText) {
     const a = tokenizeWords(delText.slice(1));
     const b = tokenizeWords(addText.slice(1));
     const n = a.length, m = b.length;
+    if (n * m > WORD_DIFF_MAX_CELLS) return null;
     const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
     for (let i = n - 1; i >= 0; i--)
       for (let j = m - 1; j >= 0; j--)
@@ -73,8 +82,10 @@
         let lwd = null, rwd = null;
         if (L && R) {
           const d = wordDiff(L.text, R.text);
-          lwd = d.del; lwd.cls = "wd-del";
-          rwd = d.add; rwd.cls = "wd-add";
+          if (d) {
+            lwd = d.del; lwd.cls = "wd-del";
+            rwd = d.add; rwd.cls = "wd-add";
+          }
         }
         rows.push({
           left:  L ? { kind: "del", no: L.oldNo, text: L.text, _wd: lwd } : null,

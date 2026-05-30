@@ -47,6 +47,37 @@ test("wordDiff on identical bodies marks nothing changed", () => {
   assert.ok(r.add.every(x => !x.changed));
 });
 
+test("wordDiff returns null for oversized lines (guards O(n*m) blowup)", () => {
+  // ~700 tokens/side → matrix exceeds the cell budget. The naive LCS would
+  // allocate a multi-million-cell table and freeze the UI; the guard bails.
+  const big = (seed) => "x" + Array.from({ length: 350 }, (_, i) => "a" + ((i + seed) % 2) + ",").join("");
+  const start = process.hrtime.bigint();
+  const r = wordDiff("-" + big(0), "+" + big(1));
+  const ms = Number(process.hrtime.bigint() - start) / 1e6;
+  assert.equal(r, null, "oversized line pair should skip word-level diff");
+  assert.ok(ms < 50, `guard should bail fast, took ${ms.toFixed(1)}ms`);
+});
+
+test("wordDiff stays under the cell budget for normal lines", () => {
+  // Sanity: ordinary code lines still get word-level diffs.
+  const r = wordDiff("-let total = compute(a, b)", "+let sum = compute(a, c)");
+  assert.notEqual(r, null);
+  assert.equal(r.del.filter(x => x.changed).map(x => x.t).join(""), "totalb");
+  assert.equal(r.add.filter(x => x.changed).map(x => x.t).join(""), "sumc");
+});
+
+test("toSplitRows leaves _wd null when paired lines are oversized", () => {
+  const big = (seed) => Array.from({ length: 350 }, (_, i) => "a" + ((i + seed) % 2) + ",").join("");
+  const numbered = [
+    { kind: "del", text: "-" + big(0), oldNo: 1, newNo: null },
+    { kind: "add", text: "+" + big(1), oldNo: null, newNo: 1 },
+  ];
+  const rows = toSplitRows(numbered);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].left._wd, null);
+  assert.equal(rows[0].right._wd, null);
+});
+
 test("toSplitRows pairs adjacent del/add into left/right cells", () => {
   const numbered = [
     { kind: "ctx", text: " hi",   oldNo: 1, newNo: 1 },
