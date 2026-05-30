@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.24] — 2026-05-30
+
+### Added
+- **Status previews now render images, Markdown, and HTML.** Selecting supported files shows a visual preview in the detail pane: images render inline, Markdown uses the existing safe renderer, and HTML opens in a sandboxed iframe.
+
 ## [0.7.23] — 2026-05-30
 
 ### Fixed

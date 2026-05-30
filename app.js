@@ -1044,6 +1044,59 @@
       return out;
     }
 
+    function extOf(path) {
+      const name = String(path || "").toLowerCase().split("?")[0].split("#")[0];
+      const i = name.lastIndexOf(".");
+      return i === -1 ? "" : name.slice(i + 1);
+    }
+
+    function imageMime(path) {
+      return ({
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        gif: "image/gif",
+        webp: "image/webp",
+        svg: "image/svg+xml",
+        bmp: "image/bmp",
+        ico: "image/x-icon",
+        avif: "image/avif",
+      })[extOf(path)] || null;
+    }
+
+    function previewKind(path) {
+      const ext = extOf(path);
+      if (imageMime(path)) return "image";
+      if (ext === "md" || ext === "markdown") return "markdown";
+      if (ext === "html" || ext === "htm") return "html";
+      return null;
+    }
+
+    async function loadFilePreview(file) {
+      const path = file.fullPath || file.path;
+      const kind = previewKind(path);
+      if (!kind || String(path || "").endsWith("/")) return null;
+      if (kind === "image") {
+        const mime = imageMime(path);
+        const r = await sh("base64 " + quote(path));
+        if (r.code !== 0 || !r.stdout) return null;
+        return {
+          kind,
+          path,
+          mime,
+          src: "data:" + mime + ";base64," + r.stdout.replace(/\s+/g, ""),
+        };
+      }
+      const r = await sh("head -c 524288 " + quote(path));
+      if (r.code !== 0) return null;
+      return {
+        kind,
+        path,
+        truncated: (r.stdout || "").length >= 524288,
+        content: r.stdout || "",
+      };
+    }
+
     /**
      * Run git diff for the selected file and return a structured form:
      *   { header: [str], hunks: [{ header, lines }], untracked: bool }
@@ -1091,6 +1144,15 @@
             hunks: [],
           };
         }
+        const preview = await loadFilePreview(file);
+        if (preview) {
+          return {
+            untracked: true,
+            preview,
+            header: [file.path + " (" + preview.kind + " preview)"],
+            hunks: [],
+          };
+        }
         // Untracked file has no real diff. Synthesize a hunk so the
         // preview shows the file's first 4 KB as "all added".
         const r = await sh("head -c 4096 " + quote(file.path));
@@ -1103,6 +1165,14 @@
             header: "@@ -0,0 +1," + lines.length + " @@",
             lines: lines.map((l) => "+" + l),
           }],
+        };
+      }
+      const preview = await loadFilePreview(file);
+      if (preview) {
+        return {
+          preview,
+          header: [file.path + " (" + preview.kind + " preview)"],
+          hunks: [],
         };
       }
       const flag = source === "staged" ? "--cached" : "";
@@ -1201,6 +1271,10 @@
         renderUntrackedDirectory(node, parsed, filePath);
         return;
       }
+      if (parsed.preview) {
+        renderFilePreview(node, parsed, source, filePath);
+        return;
+      }
       const renderHunkBody = state.diffView === "split" ? renderSplitHunkBody : renderUnifiedHunkBody;
       for (const hunk of parsed.hunks) {
         const wrapper = h("div", { class: "hunk" });
@@ -1233,6 +1307,49 @@
         renderHunkBody(wrapper, hunk, lang);
         node.appendChild(wrapper);
       }
+    }
+
+    function previewActions(source, filePath) {
+      const actions = h("span", { class: "hunk-actions" });
+      if (source === "untracked") {
+        actions.append(
+          h("button", { class: "hunk-action", onClick: () => stage(filePath) }, "Stage all"),
+          h("button", { class: "hunk-action danger", onClick: () => deleteUntracked({ path: filePath }) }, "Delete"),
+        );
+      } else if (source === "unstaged") {
+        actions.append(
+          h("button", { class: "hunk-action", onClick: () => stage(filePath) }, "Stage file"),
+          h("button", { class: "hunk-action danger", onClick: () => discard({ path: filePath }) }, "Discard"),
+        );
+      } else if (source === "staged") {
+        actions.append(h("button", { class: "hunk-action", onClick: () => unstage(filePath) }, "Unstage"));
+      }
+      return actions;
+    }
+
+    function renderFilePreview(node, parsed, source, filePath) {
+      const p = parsed.preview;
+      const wrapper = h("div", { class: "hunk status-preview status-preview-" + p.kind });
+      wrapper.appendChild(h("div", { class: "hunk-header" }, "@@ preview " + p.kind + " @@", previewActions(source, filePath)));
+
+      if (p.kind === "image") {
+        wrapper.appendChild(h("div", { class: "status-preview-image-wrap" },
+          h("img", { class: "status-preview-image", src: p.src, alt: p.path }),
+        ));
+      } else if (p.kind === "markdown") {
+        wrapper.appendChild(h("div", { class: "status-preview-doc md-body", html: window.GMMd.render(p.content) }));
+      } else if (p.kind === "html") {
+        wrapper.appendChild(h("iframe", {
+          class: "status-preview-frame",
+          sandbox: "",
+          srcdoc: p.content,
+          title: "HTML preview: " + p.path,
+        }));
+      }
+      if (p.truncated) {
+        wrapper.appendChild(h("div", { class: "diff-large-note" }, "Preview truncated at 512 KB."));
+      }
+      node.appendChild(wrapper);
     }
 
     function renderUntrackedDirectory(node, parsed, filePath) {
