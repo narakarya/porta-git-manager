@@ -755,6 +755,8 @@
    *   renderRow(file, depth): Node,    // builds and returns the file row inner content;
    *                                    // MUST NOT attach its own click handler
    *                                    // (we attach onPick to the wrapper button)
+   *   renderDirRow?(dir, depth, files, metaFile, dirPath, parts): Node[], // optional folder row contents
+   *   dirFileFor?(dirPath, files): file, // optional metadata for directory rows
    *   keyFor(file): string,            // optional stable row key for selection
    *   rowClassFor(file): string,       // optional additional row class
    * }
@@ -764,8 +766,11 @@
     const onPick = opts.onPick || (() => {});
     const onDirPick = opts.onDirPick || null;
     const renderRow = opts.renderRow || defaultDiffRow;
+    const renderDirRow = opts.renderDirRow || null;
+    const dirFileFor = opts.dirFileFor || null;
+    const dirRowClassFor = opts.dirRowClassFor || (() => "");
     const rowClassFor = opts.rowClassFor || (() => "");
-    walk(nav, node, opts.depth || 0);
+    walk(nav, node, opts.depth || 0, "");
 
     function collectFiles(n) {
       let out = n.files.slice();
@@ -773,24 +778,30 @@
       return out;
     }
 
-    function walk(parent, n, depth) {
+    function walk(parent, n, depth, prefix) {
       for (const dir of n.dirs.values()) {
         // Folder row: chevron + name. Clicking toggles the child wrapper's
         // .is-collapsed class (CSS hides children when set). State stays
         // in the DOM — caller doesn't need to track anything; if the
         // caller fully re-renders the tree, folders reset to expanded.
+        const dirPath = prefix + dir.name + "/";
         const chev = h("span", { class: "tree-chev" }, "▾");
         const folderIcon = gmFolderIcon(true); // rows start expanded → open folder
         const dirFiles = collectFiles(dir);
+        const metaFile = dirFileFor ? dirFileFor(dirPath, dirFiles) : null;
+        const renderedDir = renderDirRow ? renderDirRow(dir, depth, dirFiles, metaFile, dirPath, { chev, folderIcon }) : null;
+        const dirStatusCls = metaFile && metaFile.code ? " status-" + gmStatusClass(metaFile.code) : "";
         const dirRow = h("div", {
-          class: "diff-tree-row diff-tree-dir",
+          class: "diff-tree-row diff-tree-dir" + dirStatusCls + (metaFile && dirRowClassFor(metaFile) ? " " + dirRowClassFor(metaFile) : ""),
           style: { paddingLeft: (depth * 12 + 6) + "px" },
           title: onDirPick ? "Click to expand/collapse. Cmd/Ctrl-click to select folder." : "Expand/collapse " + dir.name + "/",
         },
-          chev,
-          folderIcon,
-          h("span", { class: "diff-tree-name" }, dir.name + "/"),
+          ...(renderedDir || [chev, folderIcon, h("span", { class: "diff-tree-name" }, dir.name + "/")]),
         );
+        if (metaFile) {
+          dirRow.dataset.path = metaFile.path;
+          dirRow.dataset.key = opts.keyFor ? opts.keyFor(metaFile) : metaFile.path;
+        }
         const childWrap = h("div", { class: "diff-tree-children" });
         dirRow.addEventListener("click", (e) => {
           if (onDirPick && (e.metaKey || e.ctrlKey || e.shiftKey)) {
@@ -804,7 +815,7 @@
         });
         parent.append(dirRow);
         parent.append(childWrap);
-        walk(childWrap, dir, depth + 1);
+        walk(childWrap, dir, depth + 1, dirPath);
       }
       for (const f of n.files) {
         const inner = renderRow(f, depth);
@@ -988,7 +999,8 @@
     // turns a file click from "two git subprocesses + rebuild" into a pure repaint.
     let statusCache = null;
     const diffCache = new Map(); // "source:path" -> parsed diff
-    function invalidateStatus() { statusCache = null; diffCache.clear(); }
+    const untrackedDirCache = new Map(); // "priv/imports/" -> ["priv/imports/file", ...]
+    function invalidateStatus() { statusCache = null; diffCache.clear(); untrackedDirCache.clear(); }
 
     async function loadStatus() {
       if (statusCache) return statusCache;
@@ -996,6 +1008,40 @@
       if (r.code !== 0) return { err: r.stderr || "git status failed" };
       statusCache = gmParseStatus(r.stdout);
       return statusCache;
+    }
+
+    async function loadUntrackedDirectoryListing(path) {
+      if (untrackedDirCache.has(path)) return untrackedDirCache.get(path);
+      const dir = String(path || "").replace(/\/+$/, "");
+      const r = await sh("find " + quote(dir) + " -type f 2>/dev/null | head -n 500");
+      const files = (r.stdout || "").split("\n").filter(Boolean);
+      untrackedDirCache.set(path, files);
+      return files;
+    }
+
+    async function expandUntrackedDirectories(files) {
+      const out = [];
+      for (const file of files) {
+        if (!file.untracked || !String(file.path || "").endsWith("/")) {
+          out.push(file);
+          continue;
+        }
+        const children = await loadUntrackedDirectoryListing(file.path);
+        if (!children.length) {
+          out.push(file);
+          continue;
+        }
+        for (const path of children) {
+          out.push({
+            path,
+            code: file.code,
+            untracked: true,
+            parentUntrackedDir: file.path,
+            parentUntrackedFile: file,
+          });
+        }
+      }
+      return out;
     }
 
     /**
@@ -1030,9 +1076,7 @@
         // Untracked directory: list the files it contains rather than
         // trying to `head` a directory (which errors).
         if (file.path.endsWith("/")) {
-          const dir = file.path.replace(/\/+$/, "");
-          const r = await sh("find " + quote(dir) + " -type f 2>/dev/null | head -n 500");
-          const files = (r.stdout || "").split("\n").filter(Boolean);
+          const files = await loadUntrackedDirectoryListing(file.path);
           const listed = files.map((path) => ({
             path: path.startsWith(file.path) ? path.slice(file.path.length) : path,
             fullPath: path,
@@ -1337,10 +1381,10 @@
       return source + ":" + file.path;
     }
 
-    function pruneStatusSelection(status) {
+    function pruneStatusSelection(status, display) {
       const live = new Set();
       for (const f of status.staged || []) live.add(statusKey("staged", f));
-      for (const f of status.unstaged || []) live.add(statusKey(f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged", f));
+      for (const f of (display && display.unstaged) || status.unstaged || []) live.add(statusKey(f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged", f));
       for (const key of [...selectedStatus]) if (!live.has(key)) selectedStatus.delete(key);
       if (lastSelectedStatusKey && !live.has(lastSelectedStatusKey)) lastSelectedStatusKey = null;
     }
@@ -1483,7 +1527,7 @@
       await refresh();
     }
 
-    function statusEntriesFrom(status, keys) {
+    function statusEntriesFrom(status, keys, display) {
       const out = [];
       const wanted = keys ? new Set(keys) : null;
       const add = (source, file) => {
@@ -1491,7 +1535,7 @@
         if (!wanted || wanted.has(key)) out.push({ source, file });
       };
       for (const f of status.staged || []) add("staged", f);
-      for (const f of status.unstaged || []) add(f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged", f);
+      for (const f of (display && display.unstaged) || status.unstaged || []) add(f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged", f);
       return out;
     }
 
@@ -1571,6 +1615,22 @@
       ];
     }
 
+    function statusTreeDirRow(file, parts, filter) {
+      if (!file) return null;
+      const statusText = file.untracked ? "new" : file.code;
+      return [
+        parts.chev,
+        parts.folderIcon,
+        h("span", { class: "file-status status-" + gmStatusClass(file.code), title: file.untracked ? "Untracked" : "" }, statusText),
+        h("span", { class: "file-name", title: file.path,
+          html: window.GMText.highlightMatches(file.path.replace(/\/+$/, "").split("/").pop() + "/", filter || "") }),
+        h("span", { class: "row-actions" },
+          h("button", { class: "row-action", onClick: (e) => { e.stopPropagation(); stage(file.path, file.submodule); } }, "stage"),
+          h("button", { class: "row-action danger", onClick: (e) => { e.stopPropagation(); discard(file); } }, "discard"),
+        ),
+      ];
+    }
+
     async function render(opts) {
       // refresh() and every mutating action pass { force:true } — that's our
       // signal the working tree may have changed, so drop the cached status/diffs.
@@ -1585,13 +1645,17 @@
         return;
       }
       state.statusFiles = { staged: status.staged, unstaged: status.unstaged };
-      pruneStatusSelection(status);
+      const displayUnstagedAll = await expandUntrackedDirectories(status.unstaged);
+      const display = { staged: status.staged, unstaged: displayUnstagedAll };
+      pruneStatusSelection(status, display);
       paintTopBar();
 
       const filter = state.fileFilter.toLowerCase();
-      const match = (f) => !filter || f.path.toLowerCase().includes(filter);
+      const match = (f) => !filter || f.path.toLowerCase().includes(filter) || (f.parentUntrackedDir || "").toLowerCase().includes(filter);
       const staged = status.staged.filter(match);
-      const unstaged = status.unstaged.filter(match);
+      const unstaged = displayUnstagedAll.filter(match);
+      const untrackedDirByPath = new Map();
+      for (const f of status.unstaged) if (f.untracked && String(f.path || "").endsWith("/")) untrackedDirByPath.set(f.path, f);
       const visibleStatusKeys = [
         ...staged.map((f) => statusKey("staged", f)),
         ...unstaged.map((f) => statusKey(f.submodule ? "submodule" : f.untracked ? "untracked" : "unstaged", f)),
@@ -1609,7 +1673,7 @@
         filterInput,
         selectedCount > 0 && h("span", { class: "toolbar-bulk-count" }, selectedCount + " selected"),
         selectedCount > 0 && h("button", { class: "btn-mini", onClick: () => { selectedStatus.clear(); render(); } }, "Clear"),
-        selectedCount > 0 && h("button", { class: "btn-mini danger", onClick: () => discardStatusEntries(statusEntriesFrom(status, selectedStatus), "selected changes") }, "Discard selected"),
+        selectedCount > 0 && h("button", { class: "btn-mini danger", onClick: () => discardStatusEntries(statusEntriesFrom(status, selectedStatus, display), "selected changes") }, "Discard selected"),
         h("div", { class: "toolbar-spacer" }),
         // View toggle: unified diff is one column with +/- prefixes; split
         // shows the old/new sides in two columns so paired changes line up.
@@ -1656,6 +1720,12 @@
             toggleFolderSelection(files, sourceFor, e, visibleStatusKeys);
             render();
           },
+          dirFileFor: (path) => untrackedDirByPath.get(path) || null,
+          dirRowClassFor: (f) => {
+            const key = statusKey(sourceFor(f), f);
+            return (selectedStatus.has(key) ? "is-selected " : "") + (state.selectedFile === key ? "is-active" : "");
+          },
+          renderDirRow: (_dir, _depth, _files, metaFile, _dirPath, parts) => statusTreeDirRow(metaFile, parts, filter),
           renderRow: (f, _depth) => statusTreeRow(f, sourceFor(f), diffNode, filter),
           onPick: (f, row, e) => {
             const source = sourceFor(f);
@@ -1683,7 +1753,7 @@
       if (state.selectedFile) {
         const [src, ...rest] = state.selectedFile.split(":");
         const path = rest.join(":");
-        const pool = src === "staged" ? status.staged : status.unstaged;
+        const pool = src === "staged" ? status.staged : displayUnstagedAll;
         const file = pool.find((f) => f.path === path);
         if (file) selectFile(file, src, diffNode);
         else state.selectedFile = null;

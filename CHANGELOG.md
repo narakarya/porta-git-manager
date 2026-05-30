@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.23] — 2026-05-30
+
+### Fixed
+- **Untracked folders expand in the Status file tree.** Folder rows such as `qa/` and `priv/imports/` now show their contained files in the left Status tree, while keeping folder-level stage/discard actions.
+
 ## [0.7.22] — 2026-05-30
 
 ### Fixed

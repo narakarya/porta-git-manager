@@ -1659,7 +1659,8 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .status-bulk-bar {
   border-bottom-color: var(--border);
 }
-.status-list .diff-tree-file .file-status {
+.status-list .diff-tree-file .file-status,
+.status-list .diff-tree-dir .file-status {
   font-family: var(--mono);
   font-size: 9px;
   font-weight: 700;
@@ -1673,17 +1674,23 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   letter-spacing: 0;
   text-transform: uppercase;
 }
-.status-list .diff-tree-file.status-modified .file-status { color: var(--amber); }
-.status-list .diff-tree-file.status-added    .file-status { color: var(--emerald); }
-.status-list .diff-tree-file.status-deleted  .file-status { color: var(--red); }
-.status-list .diff-tree-file.status-renamed  .file-status { color: var(--blue); }
-.status-list .diff-tree-file.status-untracked .file-status { color: var(--text-mute); }
+.status-list .diff-tree-file.status-modified .file-status,
+.status-list .diff-tree-dir.status-modified .file-status { color: var(--amber); }
+.status-list .diff-tree-file.status-added .file-status,
+.status-list .diff-tree-dir.status-added .file-status { color: var(--emerald); }
+.status-list .diff-tree-file.status-deleted .file-status,
+.status-list .diff-tree-dir.status-deleted .file-status { color: var(--red); }
+.status-list .diff-tree-file.status-renamed .file-status,
+.status-list .diff-tree-dir.status-renamed .file-status { color: var(--blue); }
+.status-list .diff-tree-file.status-untracked .file-status,
+.status-list .diff-tree-dir.status-untracked .file-status { color: var(--text-mute); }
 .status-list .diff-tree-file .file-status.status-modified { color: var(--amber); }
 .status-list .diff-tree-file .file-status.status-added    { color: var(--emerald); }
 .status-list .diff-tree-file .file-status.status-deleted  { color: var(--red); }
 .status-list .diff-tree-file .file-status.status-renamed  { color: var(--blue); }
 .status-list .diff-tree-file .file-status.status-untracked { color: var(--text-mute); }
-.status-list .diff-tree-file .row-actions {
+.status-list .diff-tree-file .row-actions,
+.status-list .diff-tree-dir .row-actions {
   margin-left: auto;
   display: flex;
   gap: 2px;
@@ -1693,8 +1700,12 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 }
 .status-list .diff-tree-file:hover .row-actions,
 .status-list .diff-tree-file:focus-visible .row-actions,
-.status-list .diff-tree-file.is-selected .row-actions { opacity: 1; }
-.status-list .diff-tree-file.is-selected {
+.status-list .diff-tree-file.is-selected .row-actions,
+.status-list .diff-tree-dir:hover .row-actions,
+.status-list .diff-tree-dir:focus-visible .row-actions,
+.status-list .diff-tree-dir.is-selected .row-actions { opacity: 1; }
+.status-list .diff-tree-file.is-selected,
+.status-list .diff-tree-dir.is-selected {
   background: var(--bg-selected);
 }
 
