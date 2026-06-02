@@ -37,6 +37,7 @@
     branches: { local: [], remote: [] },
     branchFilter: "",
     branchCompareBase: "",
+    branchCreateBase: "",
     log: [],
     historyFilter: "",
     historyMode: "current",
@@ -2103,6 +2104,7 @@
     const selected = new Set(); // branch names ticked for bulk delete
     let facet = "all";          // local-branch facet: all|merged|unmerged|local-only|on-remote
     let viewingName = null;
+    let createBasePinned = false;
     let loaded = false;
     let countLoadSeq = 0;
 
@@ -2112,6 +2114,10 @@
 
     function allCompareRefs(local, remote) {
       return [...local, ...remote].filter((b) => !b.name.endsWith("/HEAD")).map((b) => b.name);
+    }
+
+    function allCreateBaseRefs(local, remote) {
+      return ["HEAD", ...allCompareRefs(local, remote)];
     }
 
     function displayRefName(name) {
@@ -2125,8 +2131,26 @@
       return preferred.find((name) => set.has(name)) || (state.branch && set.has(state.branch) ? state.branch : refs[0] || "HEAD");
     }
 
+    function pickDefaultCreateBase(local, remote) {
+      const refs = allCreateBaseRefs(local, remote);
+      const set = new Set(refs);
+      const preferred = [
+        state.branch && !state.branch.startsWith("(") ? state.branch : "",
+        "main",
+        "master",
+        "remotes/origin/main",
+        "remotes/origin/master",
+        "HEAD",
+      ].filter(Boolean);
+      return preferred.find((name) => set.has(name)) || refs[0] || "HEAD";
+    }
+
     function compareBaseRef() {
       return state.branchCompareBase || "HEAD";
+    }
+
+    function createBaseRef() {
+      return state.branchCreateBase || "HEAD";
     }
 
     function resetUniqueCommitCounts(local, remote) {
@@ -2196,6 +2220,13 @@
       if (!state.branchCompareBase || !refs.has(state.branchCompareBase)) {
         state.branchCompareBase = pickDefaultCompareBase(localList, remoteList);
       }
+      const createRefs = new Set(allCreateBaseRefs(localList, remoteList));
+      if (!state.branchCreateBase || !createRefs.has(state.branchCreateBase)) {
+        createBasePinned = false;
+      }
+      if (!createBasePinned || !state.branchCreateBase || !createRefs.has(state.branchCreateBase)) {
+        state.branchCreateBase = pickDefaultCreateBase(localList, remoteList);
+      }
       resetUniqueCommitCounts(localList, remoteList);
       return { local: localList, remote: remoteList };
     }
@@ -2234,10 +2265,11 @@
     async function createBranch() {
       const name = newBranchName.trim();
       if (!name) return;
-      const r = await git("checkout -b " + quote(name));
+      const base = createBaseRef();
+      const r = await git("checkout -b " + quote(name) + " " + quote(base));
       if (r.code === 0) {
         newBranchName = "";
-        ui.toast("Created " + name, "success");
+        ui.toast("Created " + name + " from " + displayRefName(base), "success");
         await refresh();
       } else ui.toast(r.stderr || "Create failed", "error", 5000);
     }
@@ -2413,15 +2445,20 @@
         // is what made the caret jump to the end.
         onInput: (e) => { state.branchFilter = e.target.value; paint(); },
       });
+      let createButton = null;
       const newInput = h("input", {
         class: "input branch-create-input",
         placeholder: "New branch name…",
         value: newBranchName,
-        onInput: (e) => { newBranchName = e.target.value; },
+        onInput: (e) => {
+          newBranchName = e.target.value;
+          if (createButton) createButton.disabled = !newBranchName.trim();
+        },
         onKeydown: (e) => { if (e.key === "Enter") createBranch(); },
       });
       const branchData = state.branches || { local: [], remote: [] };
       const compareRefs = allCompareRefs(branchData.local || [], branchData.remote || []);
+      const createRefs = allCreateBaseRefs(branchData.local || [], branchData.remote || []);
       const compareSelect = h("select", {
         class: "input branch-compare-select",
         title: "Compare base",
@@ -2437,12 +2474,25 @@
         compareRefs.length === 0 && h("option", { value: "" }, "Compare to HEAD"),
         ...compareRefs.map((name) => h("option", { value: name, selected: name === state.branchCompareBase }, "to " + displayRefName(name))),
       );
+      const createBaseSelect = h("select", {
+        class: "input branch-create-base-select",
+        title: "Create branch from",
+        value: state.branchCreateBase || "HEAD",
+        onChange: (e) => {
+          state.branchCreateBase = e.target.value;
+          createBasePinned = true;
+        },
+      },
+        ...createRefs.map((name) => h("option", { value: name, selected: name === createBaseRef() }, "from " + displayRefName(name))),
+      );
+      createButton = h("button", { class: "btn-primary", onClick: createBranch, disabled: !newBranchName.trim() }, "Create");
       const top = h("div", { class: "branches-top" },
         filterInput,
         compareSelect,
         h("div", { class: "toolbar-spacer" }),
         newInput,
-        h("button", { class: "btn-primary", onClick: createBranch, disabled: !newBranchName.trim() }, "Create"),
+        createBaseSelect,
+        createButton,
       );
       node.append(top);
       node.append(h("div", { class: "branches-list-wrap" }));
@@ -2456,12 +2506,17 @@
         const live = new Set([...local, ...remote].map((b) => b.name));
         for (const n of [...selected]) if (!live.has(n)) selected.delete(n);
         const options = allCompareRefs(local, remote);
+        const createOptions = allCreateBaseRefs(local, remote);
         compareSelect.replaceChildren(
           ...(options.length
             ? options.map((name) => h("option", { value: name, selected: name === state.branchCompareBase }, "to " + displayRefName(name)))
             : [h("option", { value: "" }, "Compare to HEAD")]),
         );
         compareSelect.value = state.branchCompareBase || "";
+        createBaseSelect.replaceChildren(
+          ...createOptions.map((name) => h("option", { value: name, selected: name === state.branchCreateBase }, "from " + displayRefName(name))),
+        );
+        createBaseSelect.value = state.branchCreateBase || "HEAD";
       }
       paint();
       if (countSeq) loadUniqueCommitCounts(state.branches.local, state.branches.remote, countSeq);

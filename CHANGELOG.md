@@ -4,6 +4,14 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.38] — 2026-06-02
+
+### Added
+- **New branches can choose their starting branch.** The Branches tab now includes a create-from selector so a new branch can start from the current branch, `main`/`master`, or another local/remote ref.
+
+### Fixed
+- **The Branches tab Create button now enables while typing.** The button state updates as the branch-name input changes instead of staying disabled after the initial render.
+
 ## [0.7.37] — 2026-06-02
 
 ### Changed
