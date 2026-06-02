@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.39] — 2026-06-02
+
+### Fixed
+- **PR checks are cleaner and no longer show stray `null` text.** Passing checks now collapse behind a small details toggle, failing and pending checks stay visible, and the summary reports accurate passed/skipped counts.
+
 ## [0.7.38] — 2026-06-02
 
 ### Added

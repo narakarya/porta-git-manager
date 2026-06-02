@@ -4110,14 +4110,18 @@
     // Roll a check list up to one overall {kind, label}.
     function rollup(checks) {
       if (!checks || !checks.length) return null;
-      let fail = 0, pend = 0, pass = 0;
+      let fail = 0, pend = 0, pass = 0, skip = 0;
       for (const c of checks) {
         const k = checkInfo(c).kind;
-        if (k === "fail") fail++; else if (k === "pending") pend++; else pass++;
+        if (k === "fail") fail++;
+        else if (k === "pending") pend++;
+        else if (k === "skip") skip++;
+        else pass++;
       }
       if (fail) return { kind: "fail", label: fail + " failing" };
       if (pend) return { kind: "pending", label: pend + " pending" };
-      return { kind: "pass", label: "checks passed" };
+      if (pass) return { kind: "pass", label: pass + " passed" };
+      return { kind: "skip", label: skip + " skipped" };
     }
 
     function reviewBadge(decision) {
@@ -4304,64 +4308,68 @@
     }
 
     // Build the collapsible checks section. Failing + pending checks are shown
-    // up front; passing/skipped ones hide behind a "Show N passing" toggle
-    // (auto-collapsed only when there are enough to be noisy).
+    // up front; passing/skipped ones stay behind a small details toggle.
     function renderChecks(checks) {
       const order = { fail: 0, pending: 1, skip: 2, pass: 3 };
       const sorted = checks.slice().sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
-      const count = (k) => sorted.filter((c) => c.kind === k).length;
-      const fail = count("fail"), pend = count("pending"), pass = count("pass"), skip = count("skip");
+      const counts = sorted.reduce((acc, c) => {
+        acc[c.kind] = (acc[c.kind] || 0) + 1;
+        return acc;
+      }, { fail: 0, pending: 0, pass: 0, skip: 0 });
+      const fail = counts.fail, pend = counts.pending, pass = counts.pass, skip = counts.skip;
+      const overallKind = fail ? "fail" : pend ? "pending" : pass ? "pass" : "skip";
+      const summaryText = fail ? fail + " failing"
+        : pend ? pend + " pending"
+        : pass && skip ? pass + " passed, " + skip + " skipped"
+        : pass ? pass + " passed"
+        : skip + " skipped";
+      const rowKindLabel = { fail: "failing", pending: "pending", pass: "passed", skip: "skipped" };
 
-      const summary = h("div", { class: "pr-checks-summary" });
-      const pill = (n, kind, label) => n ? h("span", { class: "pr-check-pill is-" + kind },
-        h("span", { class: "pr-check-dot is-" + kind }), n + " " + label) : null;
-      summary.append(
-        pill(fail, "fail", "failing"),
-        pill(pend, "pending", "pending"),
-        pill(pass, "pass", "passed"),
-        pill(skip, "skip", "skipped"),
-      );
-
-      const row = (c) => h("a", {
+      const row = (c) => h(c.url ? "a" : "div", {
         class: "pr-check-row" + (c.url ? " is-link" : ""),
         ...(c.url ? { href: c.url, target: "_blank", rel: "noopener noreferrer" } : {}),
       },
         h("span", { class: "pr-check-dot is-" + c.kind }),
         h("span", { class: "pr-check-name" }, c.name),
-        h("span", { class: "pr-check-kind is-" + c.kind }, c.kind),
+        h("span", { class: "pr-check-kind is-" + c.kind }, rowKindLabel[c.kind] || c.kind),
       );
 
       const attention = sorted.filter((c) => c.kind === "fail" || c.kind === "pending");
       const rest = sorted.filter((c) => c.kind === "pass" || c.kind === "skip");
 
       const wrap = h("div", { class: "pr-checks-wrap" });
-      wrap.append(h("div", { class: "pr-section-title" }, "Checks"), summary);
+      wrap.append(h("div", { class: "pr-checks-head" },
+        h("div", { class: "pr-checks-title" }, "Checks"),
+        h("span", { class: "pr-checks-status is-" + overallKind },
+          h("span", { class: "pr-check-dot is-" + overallKind }),
+          summaryText,
+        ),
+      ));
 
       if (attention.length) {
         const cl = h("div", { class: "pr-checks" });
         attention.forEach((c) => cl.append(row(c)));
         wrap.append(cl);
+      } else {
+        wrap.append(h("div", { class: "pr-checks-note" },
+          pass ? "All checks passed." : "No checks need attention.",
+        ));
       }
 
       if (rest.length) {
-        // Show inline when short and nothing else is demanding attention;
-        // otherwise tuck them behind a toggle.
-        const collapse = rest.length > 4 || attention.length > 0;
-        const restList = h("div", { class: "pr-checks" + (collapse ? " is-collapsed" : "") });
+        const restList = h("div", { class: "pr-checks is-collapsed" });
         rest.forEach((c) => restList.append(row(c)));
-        if (collapse) {
-          let open = false;
-          const toggle = h("button", { class: "pr-checks-toggle" },
-            "Show " + rest.length + " passing check" + (rest.length === 1 ? "" : "s"));
-          toggle.addEventListener("click", () => {
-            open = !open;
-            restList.classList.toggle("is-collapsed", !open);
-            toggle.textContent = (open ? "Hide " : "Show ") + rest.length + " passing check" + (rest.length === 1 ? "" : "s");
-          });
-          wrap.append(toggle, restList);
-        } else {
-          wrap.append(restList);
-        }
+        let open = false;
+        const toggle = h("button", { class: "pr-checks-toggle" },
+          attention.length ? "Show " + rest.length + " other check" + (rest.length === 1 ? "" : "s") : "Show details");
+        toggle.addEventListener("click", () => {
+          open = !open;
+          restList.classList.toggle("is-collapsed", !open);
+          toggle.textContent = open
+            ? "Hide details"
+            : (attention.length ? "Show " + rest.length + " other check" + (rest.length === 1 ? "" : "s") : "Show details");
+        });
+        wrap.append(toggle, restList);
       }
 
       return wrap;
