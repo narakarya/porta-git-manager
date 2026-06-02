@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.40] — 2026-06-02
+
+### Fixed
+- **The Porta manifest now reports the released version.** The extension version is updated in `porta.json` so Porta's updater sees the new release instead of staying on `0.7.38`.
+
 ## [0.7.39] — 2026-06-02
 
 ### Fixed
