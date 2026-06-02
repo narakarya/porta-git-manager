@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.32] — 2026-06-02
+
+### Added
+- **Sync can rebase the current branch from main/master.** A new action fetches `origin`, resolves `origin/main` or `origin/master` with local fallback, and rebases the active branch onto it.
+
 ## [0.7.31] — 2026-06-02
 
 ### Added

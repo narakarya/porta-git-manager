@@ -2714,6 +2714,64 @@
       await runWithFeedback(prune ? "fetch + prune" : "fetch", args);
     }
 
+    async function findMainBaseRef() {
+      const candidates = [];
+      const originHead = await git("symbolic-ref --quiet --short refs/remotes/origin/HEAD");
+      const originHeadRef = originHead.code === 0 ? originHead.stdout.trim() : "";
+      if (/^origin\/(main|master)$/.test(originHeadRef)) candidates.push(originHeadRef);
+      candidates.push("origin/main", "origin/master", "main", "master");
+      const seen = new Set();
+      for (const ref of candidates) {
+        if (!ref || seen.has(ref)) continue;
+        seen.add(ref);
+        const r = await git("rev-parse --verify --quiet " + quote(ref));
+        if (r.code === 0) return ref;
+      }
+      return null;
+    }
+
+    async function rebaseFromMain() {
+      const name = "Rebase from main/master";
+      if (!state.branch || state.branch.startsWith("(")) {
+        ui.toast("Not on a named branch", "error");
+        return;
+      }
+      running = name;
+      render();
+      ui.toast("Running " + name + "…", "info", 1000);
+
+      const origin = await git("remote get-url origin");
+      if (origin.code === 0) {
+        const fetchOrigin = await git("fetch origin --prune", { timeout: 120000 });
+        if (fetchOrigin.code !== 0) {
+          running = null;
+          ui.toast(fetchOrigin.stderr || "Fetch origin failed", "error", 5000);
+          await refresh();
+          return;
+        }
+      }
+
+      const base = await findMainBaseRef();
+      if (!base) {
+        running = null;
+        ui.toast("No main/master branch found", "error", 5000);
+        await refresh();
+        return;
+      }
+      if (state.branch === base.replace(/^origin\//, "")) {
+        running = null;
+        ui.toast("Already on " + state.branch + ". Use Pull --rebase instead.", "info", 5000);
+        await refresh();
+        return;
+      }
+
+      const r = await git("rebase " + quote(base), { timeout: 120000 });
+      running = null;
+      if (r.code === 0) ui.toast("Rebased onto " + base, "success");
+      else ui.toast(r.stderr || "Rebase from " + base + " failed", "error", 7000);
+      await refresh();
+    }
+
     function actionCard({ name, desc, onClick, danger }) {
       const isRunning = running === name;
       return h("button", {
@@ -2803,6 +2861,7 @@
         actionCard({ name: "Fetch + prune",    desc: "Also remove refs to branches gone from remote.", onClick: () => fetch(true) }),
         actionCard({ name: "Pull",             desc: "Fetch + merge upstream into HEAD.",              onClick: () => pull(false) }),
         actionCard({ name: "Pull --rebase",    desc: "Fetch then rebase HEAD onto upstream.",          onClick: () => pull(true) }),
+        actionCard({ name: "Rebase from main/master", desc: "Fetch origin, then rebase this branch onto origin/main or origin/master.", onClick: rebaseFromMain }),
         actionCard({ name: "Push",             desc: state.upstream ? "Push HEAD to upstream." : "Push and set upstream to origin/" + state.branch + ".", onClick: () => push(false) }),
         actionCard({ name: "Push --force-with-lease", danger: true, desc: "Overwrite remote only if it hasn't moved since fetch.", onClick: () => push(true) }),
       );
