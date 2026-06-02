@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.31] — 2026-06-02
+
+### Added
+- **History can cherry-pick across branches.** The History toolbar now supports a "Pick from branch" source selector that shows commits present in the source branch but not the current target branch, with single and bulk cherry-pick actions plus paused cherry-pick continue/abort controls.
+
 ## [0.7.30] — 2026-06-02
 
 ### Added

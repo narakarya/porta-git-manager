@@ -26,6 +26,7 @@
     upstream: null,
     aheadBehind: null,
     rebaseInProgress: false,
+    cherryPickInProgress: false,
     stashCount: 0,
     repoOk: false,
     // Per-tab caches that survive tab switching — refetched only by refresh()
@@ -37,6 +38,9 @@
     branchFilter: "",
     log: [],
     historyFilter: "",
+    historyMode: "current",
+    historySourceBranch: "",
+    historyBranches: [],
     selectedCommit: null,
     rebasePlan: [],
     rebaseTarget: "HEAD~5",
@@ -917,6 +921,7 @@
     };
     const changesCount = state.statusFiles.staged.length + state.statusFiles.unstaged.length;
     setBadge("badge-status", changesCount > 0 ? String(changesCount) : "");
+    setBadge("badge-history", state.cherryPickInProgress ? "!" : "", true);
     setBadge("badge-stash", state.stashCount > 0 ? String(state.stashCount) : "");
     setBadge("badge-rebase", state.rebaseInProgress ? "!" : "", true);
     paintQuickbar();
@@ -960,6 +965,14 @@
       const c2 = await sh("test -d " + quote(p2) + " && echo y || echo n");
       state.rebaseInProgress = c2.stdout.trim() === "y";
     } else state.rebaseInProgress = false;
+  }
+
+  async function detectCherryPick() {
+    const r = await git("rev-parse --git-path CHERRY_PICK_HEAD");
+    if (r.code !== 0) { state.cherryPickInProgress = false; return; }
+    const p = r.stdout.trim();
+    const c = await sh("test -f " + quote(p) + " && echo y || echo n");
+    state.cherryPickInProgress = c.stdout.trim() === "y";
   }
 
   async function probeStashCount() {
@@ -2090,6 +2103,17 @@
     let viewingName = null;
     let loaded = false;
 
+    function sourceRefName(b) {
+      return b.isRemote ? b.name.replace(/^remotes\//, "") : b.name;
+    }
+
+    function pickCommitsFromBranch(b) {
+      state.historyMode = "source";
+      state.historySourceBranch = sourceRefName(b);
+      state.selectedCommit = null;
+      activateTab("history");
+    }
+
     async function loadBranches() {
       const sep = "\x1f";
       const r = await git("branch -a --format=" + quote("%(HEAD)" + sep + "%(refname:short)" + sep + "%(upstream:short)" + sep + "%(upstream:track)" + sep + "%(objectname:short)" + sep + "%(committerdate:relative)" + sep + "%(contents:subject)"));
@@ -2539,6 +2563,7 @@
           onActivate: canViewDiff ? diffBranch : null,
           tags: h("span", { class: "branch-tags" }, mergeBadge(b), remoteBadge(b), trackBadge(b)),
           actions: [
+            !b.isCurrent && h("button", { class: "btn-mini", onClick: () => pickCommitsFromBranch(b) }, "Pick"),
             !b.isCurrent && h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Switch"),
             !b.isCurrent && h("button", { class: "btn-mini danger", onClick: () => deleteBranch(b.name) }, "Delete"),
           ].filter(Boolean),
@@ -2556,6 +2581,7 @@
             onActivate: canViewDiff ? diffBranch : null,
             tags: null,
             actions: [
+              h("button", { class: "btn-mini", onClick: () => pickCommitsFromBranch(b) }, "Pick"),
               h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Check out"),
               h("button", { class: "btn-mini danger", onClick: () => deleteRemoteBranch(b) }, "Delete remote"),
             ],
@@ -2793,6 +2819,8 @@
     let lastFiles = []; // parsed files of the most-recently-rendered commit (used by Tasks 17/18)
     let logCache = new Map(); // filter string -> commits
     let detailCache = new Map(); // short sha -> rendered detail data
+    let branchCache = null;
+    const selectedCommits = new Set();
     let actionRunning = false;
 
     function openInViewer(commit, files) {
@@ -2810,20 +2838,59 @@
       };
       ui.diffModal({
         title: commit.msg,
-        subtitle: commit.sha + " · " + commit.author + " · " + commit.when,
+        subtitle: commit.sha + " · " + commit.author + " · " + commit.when + (commit.source ? " · " + commit.source : ""),
         files,
         refetch: fetchFiles,
       });
     }
 
+    function targetRef() {
+      return state.branch && !state.branch.startsWith("(") ? state.branch : "HEAD";
+    }
+
+    function targetLabel() {
+      return state.branch || "HEAD";
+    }
+
+    async function loadHistoryBranches() {
+      if (branchCache) return branchCache;
+      const r = await git("for-each-ref --format=" + quote("%(refname:short)") + " refs/heads refs/remotes");
+      if (r.code !== 0) return [];
+      const seen = new Set();
+      branchCache = r.stdout.split("\n")
+        .map((s) => s.trim())
+        .filter((name) => name && !/\/HEAD$/.test(name) && name !== state.branch)
+        .filter((name) => {
+          if (seen.has(name)) return false;
+          seen.add(name);
+          return true;
+        });
+      state.historyBranches = branchCache;
+      if (!state.historySourceBranch && branchCache.length) state.historySourceBranch = branchCache[0];
+      return branchCache;
+    }
+
+    function historyScope() {
+      if (state.historyMode === "all") return { label: "All branches", args: " --all", source: null };
+      if (state.historyMode === "source" && state.historySourceBranch) {
+        return {
+          label: state.historySourceBranch + " not in " + targetLabel(),
+          args: " " + quote(targetRef() + ".." + state.historySourceBranch),
+          source: state.historySourceBranch,
+        };
+      }
+      return { label: "Current branch", args: "", source: null };
+    }
+
     async function loadLog(filter) {
       const sep = "\x1f";
       const grep = filter ? " --grep=" + quote(filter) + " -i" : "";
-      const r = await git("log --no-color" + grep + " --pretty=format:" + quote("%h" + sep + "%s" + sep + "%an" + sep + "%ar" + sep + "%H" + sep + "%p") + " -n 100");
+      const scope = historyScope();
+      const r = await git("log --no-color" + grep + " --pretty=format:" + quote("%h" + sep + "%s" + sep + "%an" + sep + "%ar" + sep + "%H" + sep + "%p") + " -n 100" + scope.args);
       if (r.code !== 0) return [];
       return r.stdout.split("\n").filter(Boolean).map((line) => {
         const [sha, msg, author, when, fullSha, parents] = line.split(sep);
-        return { sha, msg, author, when, fullSha, parents: (parents || "").trim() };
+        return { sha, msg, author, when, fullSha, parents: (parents || "").trim(), source: scope.source };
       });
     }
 
@@ -2864,6 +2931,22 @@
       }
     }
 
+    async function runHistoryShellAction(label, cmd, okMsg) {
+      if (actionRunning) return;
+      actionRunning = true;
+      ui.toast("Running " + label + "…", "info", 1200);
+      try {
+        const r = await sh(cmd, { timeout: 120000 });
+        if (r.code === 0) ui.toast(okMsg, "success");
+        else ui.toast(r.stderr || label + " failed", "error", 7000);
+        await refresh();
+      } catch (err) {
+        ui.toast((err && err.message) || label + " failed", "error", 7000);
+      } finally {
+        actionRunning = false;
+      }
+    }
+
     async function cherryPickCommit(commit) {
       if (actionRunning) return;
       const parents = (commit.parents || "").split(/\s+/).filter(Boolean);
@@ -2886,12 +2969,51 @@
       } else {
         const ok = await ui.confirm({
           title: "Cherry-pick commit?",
-          body: `Apply ${commit.sha} to the current branch. If conflicts happen, Git will pause for manual resolution.`,
-          okLabel: "Cherry-pick",
+          body: `Apply ${commit.sha} to ${targetLabel()}. If conflicts happen, Git will pause for manual resolution.`,
+          okLabel: state.historyMode === "source" ? "Cherry-pick to " + targetLabel() : "Cherry-pick",
         });
         if (!ok) return;
       }
       await runHistoryAction("cherry-pick", "cherry-pick" + mainline + " " + quote(commitRef(commit)), "Cherry-pick complete");
+    }
+
+    async function cherryPickSelected(commits) {
+      if (actionRunning) return;
+      const picked = commits.filter((c) => selectedCommits.has(commitRef(c)));
+      if (!picked.length) return;
+      const merges = picked.filter((c) => (c.parents || "").split(/\s+/).filter(Boolean).length > 1);
+      if (merges.length) {
+        ui.toast("Cherry-pick merge commits one at a time so the mainline parent can be selected.", "error", 6000);
+        return;
+      }
+      const ordered = picked.slice().reverse();
+      const ok = await ui.confirm({
+        title: `Cherry-pick ${ordered.length} commit${ordered.length === 1 ? "" : "s"}?`,
+        body: `Apply selected commits from oldest to newest onto ${targetLabel()}. If conflicts happen, Git will pause for manual resolution.`,
+        okLabel: "Cherry-pick to " + targetLabel(),
+      });
+      if (!ok) return;
+      selectedCommits.clear();
+      await runHistoryAction(
+        "cherry-pick selected",
+        "cherry-pick " + ordered.map((c) => quote(commitRef(c))).join(" "),
+        "Cherry-pick complete",
+      );
+    }
+
+    async function continueCherryPick() {
+      await runHistoryShellAction("cherry-pick --continue", "GIT_EDITOR=true git cherry-pick --continue", "Cherry-pick continued");
+    }
+
+    async function abortCherryPick() {
+      const ok = await ui.confirm({
+        title: "Abort cherry-pick?",
+        body: "Stop the paused cherry-pick and restore the branch to the state before it started.",
+        danger: true,
+        okLabel: "Abort",
+      });
+      if (!ok) return;
+      await runHistoryAction("cherry-pick --abort", "cherry-pick --abort", "Cherry-pick aborted");
     }
 
     async function resetToCommit(commit, mode) {
@@ -2939,6 +3061,8 @@
         h("span", null, commit.author),
         h("span", null, "·"),
         h("span", { title: detail.absDate }, commit.when),
+        commit.source && h("span", null, "·"),
+        commit.source && h("span", null, "source: " + commit.source),
       ));
 
       const parents = (commit.parents || "").split(/\s+/).filter(Boolean);
@@ -2961,12 +3085,18 @@
       pillRow.append(viewerBtn);
       card.append(pillRow);
 
-      card.append(h("div", { class: "commit-actions" },
-        h("button", { class: "btn-mini", onClick: (e) => { e.stopPropagation(); cherryPickCommit(commit); } }, "Cherry-pick"),
-        h("button", { class: "btn-mini", title: "Move HEAD here; keep later changes staged", onClick: (e) => { e.stopPropagation(); resetToCommit(commit, "soft"); } }, "Reset soft"),
-        h("button", { class: "btn-mini", title: "Move HEAD here; keep later changes unstaged", onClick: (e) => { e.stopPropagation(); resetToCommit(commit, "mixed"); } }, "Reset mixed"),
-        h("button", { class: "btn-mini danger", title: "Move HEAD here and discard tracked working-tree changes", onClick: (e) => { e.stopPropagation(); resetToCommit(commit, "hard"); } }, "Reset hard"),
-      ));
+      const commitActions = [
+        h("button", { class: "btn-mini", onClick: (e) => { e.stopPropagation(); cherryPickCommit(commit); } },
+          state.historyMode === "source" ? "Cherry-pick to " + targetLabel() : "Cherry-pick"),
+      ];
+      if (state.historyMode !== "source") {
+        commitActions.push(
+          h("button", { class: "btn-mini", title: "Move HEAD here; keep later changes staged", onClick: (e) => { e.stopPropagation(); resetToCommit(commit, "soft"); } }, "Reset soft"),
+          h("button", { class: "btn-mini", title: "Move HEAD here; keep later changes unstaged", onClick: (e) => { e.stopPropagation(); resetToCommit(commit, "mixed"); } }, "Reset mixed"),
+          h("button", { class: "btn-mini danger", title: "Move HEAD here and discard tracked working-tree changes", onClick: (e) => { e.stopPropagation(); resetToCommit(commit, "hard"); } }, "Reset hard"),
+        );
+      }
+      card.append(h("div", { class: "commit-actions" }, ...commitActions));
 
       detailNode.append(card);
 
@@ -3028,14 +3158,58 @@
       const node = pane();
       node.innerHTML = "";
       node.className = "pane is-active history-pane";
+      if (force) branchCache = null;
+      const branches = await loadHistoryBranches();
 
+      if (state.historyMode === "source" && !state.historySourceBranch && branches.length) {
+        state.historySourceBranch = branches[0];
+      }
+
+      const modeSelect = h("select", {
+        class: "input history-mode-select",
+        value: state.historyMode,
+        onChange: (e) => {
+          state.historyMode = e.target.value;
+          selectedCommits.clear();
+          state.selectedCommit = null;
+          render({ force: true });
+        },
+      },
+        h("option", { value: "current", selected: state.historyMode === "current" }, "Current branch"),
+        h("option", { value: "source", selected: state.historyMode === "source" }, "Pick from branch"),
+        h("option", { value: "all", selected: state.historyMode === "all" }, "All branches"),
+      );
+      const sourceSelect = h("select", {
+        class: "input history-source-select",
+        value: state.historySourceBranch,
+        disabled: state.historyMode !== "source" || branches.length === 0,
+        onChange: (e) => {
+          state.historySourceBranch = e.target.value;
+          selectedCommits.clear();
+          state.selectedCommit = null;
+          render({ force: true });
+        },
+      }, ...branches.map((name) => h("option", { value: name, selected: name === state.historySourceBranch }, name)));
       const search = h("input", {
         class: "history-search",
         placeholder: "Filter commits by message…",
         value: state.historyFilter,
         onInput: (e) => { caretPos = e.target.selectionStart; state.historyFilter = e.target.value; clearTimeout(searchTimer); searchTimer = setTimeout(render, 250); },
       });
-      node.append(h("div", { class: "history-top" }, search));
+      const progress = state.cherryPickInProgress
+        ? h("div", { class: "history-progress" },
+          h("span", { class: "history-progress-label" }, "Cherry-pick paused"),
+          h("button", { class: "btn-primary", onClick: continueCherryPick }, "Continue"),
+          h("button", { class: "btn-danger", onClick: abortCherryPick }, "Abort"),
+        )
+        : null;
+      node.append(h("div", { class: "history-top" },
+        modeSelect,
+        state.historyMode === "source" && sourceSelect,
+        state.historyMode === "source" && h("span", { class: "history-target-chip", title: "Cherry-pick target" }, "to " + targetLabel()),
+        search,
+        progress,
+      ));
       // The re-render above recreates this input; put the caret back where the
       // user was typing instead of letting it snap to the end.
       if (caretPos != null) { search.focus(); try { search.setSelectionRange(caretPos, caretPos); } catch (_) {} caretPos = null; }
@@ -3045,7 +3219,8 @@
       detail.innerHTML = '<div class="history-detail-empty">Pick a commit to inspect.</div>';
       node.append(h("div", { class: "history-split" }, list, detail));
 
-      const cacheKey = state.historyFilter || "";
+      const scope = historyScope();
+      const cacheKey = [state.historyMode, state.historySourceBranch, targetRef(), state.historyFilter || ""].join("\x1f");
       if (force) {
         logCache.clear();
         detailCache.clear();
@@ -3056,17 +3231,47 @@
         logCache.set(cacheKey, commits);
       }
       state.log = commits;
+      const live = new Set(commits.map((c) => commitRef(c)));
+      for (const sha of Array.from(selectedCommits)) if (!live.has(sha)) selectedCommits.delete(sha);
       if (commits.length === 0) {
-        list.append(h("div", { class: "empty-files" }, "No commits match"));
+        list.append(h("div", { class: "empty-files" },
+          state.historyMode === "source" ? "No source-only commits in " + (state.historySourceBranch || "selected branch") : "No commits match"));
         return;
       }
+      if (state.historyMode === "source") {
+        const picked = commits.filter((c) => selectedCommits.has(commitRef(c)));
+        if (picked.length) {
+          list.append(h("div", { class: "bulk-bar history-bulk" },
+            h("span", { class: "bulk-count" }, picked.length + " selected"),
+            h("button", { class: "btn-primary", onClick: () => cherryPickSelected(commits) }, "Cherry-pick to " + targetLabel()),
+            h("button", { class: "btn-ghost", onClick: () => { selectedCommits.clear(); render(); } }, "Clear"),
+          ));
+        }
+        list.append(h("div", { class: "history-source-note" }, scope.label));
+      }
       for (const c of commits) {
+        const ref = commitRef(c);
+        const checked = selectedCommits.has(ref);
         const initial = (c.author || "?").trim().charAt(0).toUpperCase();
         const chip = h("span", { class: "author-chip",
           title: c.author,
           style: { background: gmAuthorChipColor(c.author || "") } }, initial);
+        const check = state.historyMode === "source"
+          ? h("input", {
+            type: "checkbox",
+            class: "history-check",
+            checked,
+            title: checked ? "Remove from cherry-pick selection" : "Select for cherry-pick",
+            onClick: (e) => e.stopPropagation(),
+            onChange: (e) => {
+              if (e.target.checked) selectedCommits.add(ref);
+              else selectedCommits.delete(ref);
+              render();
+            },
+          })
+          : null;
         const row = h("div", {
-          class: "log-row" + (state.selectedCommit === c.sha ? " is-selected" : ""),
+          class: "log-row" + (state.historyMode === "source" ? " has-check" : "") + (state.selectedCommit === c.sha ? " is-selected" : "") + (checked ? " is-checked" : ""),
           onClick: () => {
             state.selectedCommit = c.sha;
             document.querySelectorAll(".log-row").forEach((r) => r.classList.toggle("is-selected", r.dataset.sha === c.sha));
@@ -3074,11 +3279,12 @@
           },
           dataset: { sha: c.sha },
         },
+          check,
           chip,
           h("span", { class: "log-sha" }, c.sha),
           h("span", null,
             h("span", { class: "log-msg-line", title: c.msg, html: window.GMText.highlightMatches(c.msg, (state.historyFilter || "").toLowerCase()) }),
-            h("span", { class: "log-meta" }, `${c.author} · ${c.when}`),
+            h("span", { class: "log-meta" }, `${c.author} · ${c.when}` + (c.source ? " · " + c.source : "")),
           ),
         );
         list.append(row);
@@ -4141,6 +4347,7 @@
       }
       await readHead();
       await detectRebase();
+      await detectCherryPick();
       await probeStashCount();
       paintTopBar();
       await renderActiveTab({ force: true });
@@ -4184,6 +4391,7 @@
     }
     await readHead();
     await detectRebase();
+    await detectCherryPick();
     await probeStashCount();
     paintTopBar();
     activateTab("status");
