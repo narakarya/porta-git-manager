@@ -941,6 +941,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
 .branch-tag.is-identical { background: rgba(52,211,153,.18); color: var(--emerald); box-shadow: inset 0 0 0 1px rgba(52,211,153,.45); }
 .branch-tag.is-merged    { background: rgba(52,211,153,.12); color: var(--emerald); }
 .branch-tag.is-unmerged  { background: rgba(251,191,36,.12); color: var(--amber); }
+.branch-tag.is-commits   { background: rgba(96,165,250,.12); color: var(--blue); font-family: var(--mono); }
 .branch-tag.is-synced    { background: rgba(255,255,255,.05); color: var(--text-mute); }
 .branch-tag.is-diverged  { background: rgba(96,165,250,.12); color: var(--blue); font-family: var(--mono); }
 .branch-tag.is-gone      { background: rgba(248,113,113,.12); color: var(--red); }
@@ -1218,6 +1219,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
   min-width: 0;
 }
 .stash-message-input { flex: 1 1 320px; min-width: 220px; max-width: 520px; }
+.stash-filter-input { flex: 0 1 220px; min-width: 160px; max-width: 280px; }
 .stash-list-wrap {
   flex: 1;
   min-height: 0;

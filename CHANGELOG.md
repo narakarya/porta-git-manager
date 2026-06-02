@@ -4,6 +4,12 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.34] — 2026-06-02
+
+### Added
+- **Stash entries can be searched.** The Stash tab now filters cached entries by ref, message, branch, or age, with highlighted matches in the list.
+- **Branches show their unique commit counts.** Branch rows now show how many commits the branch has beyond `HEAD`, and the branch commit shortcut is labeled clearly as "Commits".
+
 ## [0.7.33] — 2026-06-02
 
 ### Added

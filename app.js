@@ -2107,7 +2107,7 @@
       return b.isRemote ? b.name.replace(/^remotes\//, "") : b.name;
     }
 
-    function pickCommitsFromBranch(b) {
+    function showCommitsFromBranch(b) {
       state.historyMode = "source";
       state.historySourceBranch = sourceRefName(b);
       state.selectedCommit = null;
@@ -2165,6 +2165,16 @@
       // can flag which local branches are also published vs. local-only.
       const remoteShort = new Set(remoteList.map((b) => b.name.split("/").slice(2).join("/")));
       for (const b of localList) b.hasRemote = remoteShort.has(b.name);
+      await Promise.all([...localList, ...remoteList].map(async (b) => {
+        if (b.isCurrent) {
+          b.uniqueCommits = 0;
+          return;
+        }
+        const cr = await git("rev-list --left-right --count HEAD..." + quote(b.name));
+        if (cr.code !== 0) return;
+        const parts = cr.stdout.trim().split(/\s+/);
+        b.uniqueCommits = Number(parts[1]) || 0;
+      }));
       return { local: localList, remote: remoteList };
     }
 
@@ -2480,6 +2490,17 @@
           : h("span", { class: "branch-tag is-unmerged", title: "Has commits not in HEAD — delete needs force." }, "unmerged");
       }
 
+      function commitBadge(b) {
+        if (b.isCurrent || typeof b.uniqueCommits !== "number") return null;
+        const n = b.uniqueCommits;
+        return h("span", {
+          class: "branch-tag is-commits",
+          title: n
+            ? n + " commit" + (n === 1 ? "" : "s") + " reachable from this branch but not HEAD."
+            : "No commits reachable from this branch that HEAD does not already have.",
+        }, n + " commit" + (n === 1 ? "" : "s"));
+      }
+
       function isMainBranch(b) {
         return b.isRemote ? remoteParts(b.name).branch === "main" : b.name === "main";
       }
@@ -2561,9 +2582,9 @@
         list.append(branchRow(b, {
           selectable: !b.isCurrent,
           onActivate: canViewDiff ? diffBranch : null,
-          tags: h("span", { class: "branch-tags" }, mergeBadge(b), remoteBadge(b), trackBadge(b)),
+          tags: h("span", { class: "branch-tags" }, mergeBadge(b), commitBadge(b), remoteBadge(b), trackBadge(b)),
           actions: [
-            !b.isCurrent && h("button", { class: "btn-mini", onClick: () => pickCommitsFromBranch(b) }, "Pick"),
+            !b.isCurrent && h("button", { class: "btn-mini", onClick: () => showCommitsFromBranch(b) }, "Commits"),
             !b.isCurrent && h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Switch"),
             !b.isCurrent && h("button", { class: "btn-mini danger", onClick: () => deleteBranch(b.name) }, "Delete"),
           ].filter(Boolean),
@@ -2579,9 +2600,9 @@
           list.append(branchRow(b, {
             selectable: true,
             onActivate: canViewDiff ? diffBranch : null,
-            tags: null,
+            tags: h("span", { class: "branch-tags" }, commitBadge(b)),
             actions: [
-              h("button", { class: "btn-mini", onClick: () => pickCommitsFromBranch(b) }, "Pick"),
+              h("button", { class: "btn-mini", onClick: () => showCommitsFromBranch(b) }, "Commits"),
               h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Check out"),
               h("button", { class: "btn-mini danger", onClick: () => deleteRemoteBranch(b) }, "Delete remote"),
             ],
@@ -3553,6 +3574,7 @@
     const selectedRefs = new Set(); // stash refs ticked for bulk drop
     let viewingRef = null;
     let loaded = false;
+    let filter = "";
 
     async function loadStash() {
       const sep = "\x1f";
@@ -3703,10 +3725,17 @@
         onKeydown: (e) => { if (e.key === "Enter") save(); },
       });
       const untrackedChk = h("input", { type: "checkbox", checked: includeUntracked, onChange: (e) => { includeUntracked = e.target.checked; } });
+      const filterInput = h("input", {
+        class: "input history-search stash-filter-input",
+        placeholder: "Filter stashes…",
+        value: filter,
+        onInput: (e) => { filter = e.target.value; paint(); },
+      });
       node.append(h("div", { class: "stash-top" },
         msgInput,
         h("label", { class: "toolbar-check" }, untrackedChk, "include untracked"),
         h("button", { class: "btn-primary", onClick: save }, "Stash"),
+        filterInput,
       ));
 
       node.append(h("div", { class: "stash-list-wrap" }));
@@ -3729,6 +3758,10 @@
       if (!wrap) return;
       wrap.innerHTML = "";
       const stashes = state.stashes || [];
+      const f = filter.trim().toLowerCase();
+      const visible = f ? stashes.filter((s) => [s.ref, s.msg, s.desc, s.branch, s.when]
+        .some((v) => String(v || "").toLowerCase().includes(f))) : stashes;
+      const hl = (s) => window.GMText.highlightMatches(s || "", f);
       const toggle = (ref, on) => { if (on) selectedRefs.add(ref); else selectedRefs.delete(ref); paint(); };
 
       if (selectedRefs.size > 0) {
@@ -3743,8 +3776,10 @@
       const list = h("div", { class: "stash-list" });
       if (stashes.length === 0) {
         list.append(h("div", { class: "empty-files" }, "No stashes"));
+      } else if (visible.length === 0) {
+        list.append(h("div", { class: "empty-files" }, "No matching stashes"));
       } else {
-        for (const s of stashes) {
+        for (const s of visible) {
           // Whole row is clickable to open the diff viewer. Children that have
           // their own click semantics (checkbox + action buttons) stop the event
           // from bubbling to the row. The "View" button is gone — the row IS the
@@ -3761,14 +3796,14 @@
               onChange: (e) => { e.stopPropagation(); toggle(s.ref, e.target.checked); },
               onClick: (e) => e.stopPropagation(),
             }),
-            h("span", { class: "stash-idx" }, s.ref),
+            h("span", { class: "stash-idx", html: hl(s.ref) }),
             h("div", { class: "stash-main" },
               h("div", { class: "stash-line" },
-                h("span", { class: "stash-msg", title: s.msg }, s.desc),
+                h("span", { class: "stash-msg", title: s.msg, html: hl(s.desc) }),
               ),
               h("div", { class: "stash-sub" },
-                s.branch && h("span", { class: "stash-branch" }, s.branch),
-                s.when && h("span", { class: "stash-when" }, s.when),
+                s.branch && h("span", { class: "stash-branch", html: hl(s.branch) }),
+                s.when && h("span", { class: "stash-when", html: hl(s.when) }),
               ),
             ),
             h("span", { class: "stash-actions" },

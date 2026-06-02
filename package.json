@@ -1,6 +1,6 @@
 {
   "name": "porta-git-manager",
-  "version": "0.7.33",
+  "version": "0.7.34",
   "private": true,
   "type": "commonjs",
   "description": "Git GUI extension for Porta.",
