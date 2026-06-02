@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.33] — 2026-06-02
+
+### Added
+- **Interactive rebase now supports `edit`.** Rebase plans can stop at selected commits for manual changes/amends, and paused rebase messaging now covers both conflict resolution and edit stops.
+
 ## [0.7.32] — 2026-06-02
 
 ### Added

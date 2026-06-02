@@ -1151,6 +1151,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
 }
 .rebase-todo-row[data-op="pick"]   { border-left-color: rgba(52,211,153,.45); }
 .rebase-todo-row[data-op="reword"] { border-left-color: var(--blue); }
+.rebase-todo-row[data-op="edit"]   { border-left-color: var(--violet); }
 .rebase-todo-row[data-op="squash"],
 .rebase-todo-row[data-op="fixup"]  { border-left-color: var(--amber); }
 .rebase-todo-row[data-op="drop"]   { border-left-color: var(--red); }

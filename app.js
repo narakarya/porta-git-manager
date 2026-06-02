@@ -3409,11 +3409,12 @@
       ui.toast("Rebasing…", "info", 1500);
       const r = await sh(cmd, { timeout: 120000 });
       await sh("rm -f " + quote(tmp));
-      if (r.code === 0) {
+      await detectRebase();
+      if (r.code === 0 && !state.rebaseInProgress) {
         state.rebasePlan = [];
         ui.toast("Rebase complete", "success");
       } else {
-        ui.toast("Rebase paused — resolve conflicts in your editor, stage, then click Continue", "error", 6000);
+        ui.toast("Rebase paused — resolve conflicts or amend the stopped commit, stage changes, then click Continue", "error", 6000);
       }
       await refresh();
     }
@@ -3452,7 +3453,7 @@
             h("div", null,
               h("strong", null, "Rebase in progress."),
               h("p", { style: { margin: "4px 0 0", color: "var(--text-mute)", fontSize: "11px" } },
-                "Resolve conflicts in your editor, stage them from the Status tab, then come back here and click Continue."),
+                "Resolve conflicts or edit/amend the stopped commit, stage changes from the Status tab, then come back here and click Continue."),
             ),
           ),
           h("div", { class: "rebase-actions" },
@@ -3480,7 +3481,7 @@
         node.append(h("div", { class: "rebase-empty" },
           h("div", { class: "rebase-empty-title" }, "Interactive rebase"),
           h("p", { class: "empty-sub", style: { margin: "0 auto" } },
-            "Enter a target ref above and press Plan rebase. Commits between it and HEAD appear here, where you can pick · squash · fixup · drop and reorder them before applying."),
+            "Enter a target ref above and press Plan rebase. Commits between it and HEAD appear here, where you can pick · edit · squash · fixup · drop and reorder them before applying."),
         ));
         return;
       }
@@ -3512,7 +3513,7 @@
             render();
           },
         });
-        for (const op of ["pick", "reword", "squash", "fixup", "drop"]) {
+        for (const op of ["pick", "edit", "reword", "squash", "fixup", "drop"]) {
           sel.append(h("option", { value: op, selected: c.op === op }, op));
         }
         const grip = h("span", { class: "grip", title: "Move up/down" },
