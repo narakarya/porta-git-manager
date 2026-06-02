@@ -36,10 +36,12 @@
     fileFilter: "",
     branches: { local: [], remote: [] },
     branchFilter: "",
+    branchCompareBase: "",
     log: [],
     historyFilter: "",
     historyMode: "current",
     historySourceBranch: "",
+    historySourceBase: "",
     historyBranches: [],
     selectedCommit: null,
     rebasePlan: [],
@@ -2108,9 +2110,33 @@
       return b.isRemote ? b.name.replace(/^remotes\//, "") : b.name;
     }
 
+    function allCompareRefs(local, remote) {
+      return [...local, ...remote].filter((b) => !b.name.endsWith("/HEAD")).map((b) => b.name);
+    }
+
+    function displayRefName(name) {
+      return String(name || "").replace(/^remotes\//, "");
+    }
+
+    function pickDefaultCompareBase(local, remote) {
+      const refs = allCompareRefs(local, remote);
+      const set = new Set(refs);
+      const preferred = ["main", "master", "remotes/origin/main", "remotes/origin/master"];
+      return preferred.find((name) => set.has(name)) || (state.branch && set.has(state.branch) ? state.branch : refs[0] || "HEAD");
+    }
+
+    function compareBaseRef() {
+      return state.branchCompareBase || "HEAD";
+    }
+
+    function resetUniqueCommitCounts(local, remote) {
+      for (const b of [...local, ...remote]) b.uniqueCommits = b.name === compareBaseRef() ? 0 : undefined;
+    }
+
     function showCommitsFromBranch(b) {
       state.historyMode = "source";
       state.historySourceBranch = sourceRefName(b);
+      state.historySourceBase = displayRefName(compareBaseRef());
       state.selectedCommit = null;
       activateTab("history");
     }
@@ -2166,15 +2192,20 @@
       // can flag which local branches are also published vs. local-only.
       const remoteShort = new Set(remoteList.map((b) => b.name.split("/").slice(2).join("/")));
       for (const b of localList) b.hasRemote = remoteShort.has(b.name);
-      for (const b of localList) if (b.isCurrent) b.uniqueCommits = 0;
+      const refs = new Set(allCompareRefs(localList, remoteList));
+      if (!state.branchCompareBase || !refs.has(state.branchCompareBase)) {
+        state.branchCompareBase = pickDefaultCompareBase(localList, remoteList);
+      }
+      resetUniqueCommitCounts(localList, remoteList);
       return { local: localList, remote: remoteList };
     }
 
     async function loadUniqueCommitCounts(local, remote, seq) {
-      const branches = [...local, ...remote].filter((b) => !b.isCurrent);
+      const base = compareBaseRef();
+      const branches = [...local, ...remote].filter((b) => b.name !== base);
       for (const b of branches) {
         if (seq !== countLoadSeq) return;
-        const cr = await git("rev-list --left-right --count " + quote("HEAD..." + b.name));
+        const cr = await git("rev-list --left-right --count " + quote(base + "..." + b.name));
         if (seq !== countLoadSeq) return;
         if (cr.code !== 0) continue;
         const parts = cr.stdout.trim().split(/\s+/);
@@ -2294,58 +2325,36 @@
       await refresh();
     }
 
-    // Read-only preview of how a branch differs from HEAD. Default direction
-    // is three-dot `HEAD...<branch>` — what the branch carries relative to
-    // the merge base. If that's empty (e.g. the branch was created from main,
-    // never updated, and main moved forward — branch is "unmerged" per
-    // `git branch --merged` but has no own work), fall back to a two-arg
-    // `<branch> HEAD` diff so the user still sees what HEAD has that the
-    // branch doesn't. Only when BOTH directions are empty is the branch truly
-    // identical to HEAD.
+    // Read-only preview of how a branch differs from the selected compare
+    // base. Three-dot mirrors PR compare semantics: changes reachable from
+    // the branch since its merge-base with the base branch.
     async function diffBranch(b) {
       // Double-click guard via showLoading — bail if a modal is already up.
-      if (!ui.showLoading("Diffing " + b.name + "…")) return;
+      const base = compareBaseRef();
+      if (!ui.showLoading("Comparing " + displayRefName(base) + "…" + displayRefName(b.name) + "…")) return;
       viewingName = b.name;
       paintViewing();
       const ref = b.name;
-      let direction = "branch-side";
 
       const fetchFiles = async ({ ignoreWhitespace, context } = { ignoreWhitespace: false, context: 3 }) => {
         const flags = (ignoreWhitespace ? " -w" : "") + " -U" + context;
-        const cmd = direction === "head-side"
-          ? "diff " + quote(ref) + " HEAD --no-color" + flags
-          : "diff HEAD..." + quote(ref) + " --no-color" + flags;
+        const cmd = "diff " + quote(base + "..." + ref) + " --no-color" + flags;
         const r = await git(cmd);
         if (r.code !== 0) throw new Error(r.stderr || "Diff failed");
         return gmParseDiffDoc(r.stdout);
       };
 
       try {
-        let files = await fetchFiles();
-        let title = "Branch diff: " + b.name;
-        let subtitle = files.length + " files changed";
-
+        const files = await fetchFiles();
         if (!files.length) {
-          // Three-dot empty — try the other direction.
-          direction = "head-side";
-          files = await fetchFiles();
-          if (!files.length) {
-            ui.hideLoading();
-            // For branches the user already knows are merged (badge says so),
-            // a long "identical to HEAD" toast is just noise. Short ack
-            // instead. Truly-identical unmerged branches keep the longer
-            // explanation because that case is less obvious.
-            if (b.merged) ui.toast("Already merged.", "info", 2000);
-            else ui.toast("Branch is identical to HEAD — nothing to diff.", "info", 4000);
-            return;
-          }
-          title = "Branch diff: " + b.name + " (behind HEAD)";
-          subtitle = files.length + " files HEAD carries that this branch doesn't";
+          ui.hideLoading();
+          ui.toast("No changes in " + displayRefName(b.name) + " compared to " + displayRefName(base) + ".", "info", 3000);
+          return;
         }
 
         await ui.diffModal({
-          title,
-          subtitle,
+          title: "Compare: " + displayRefName(base) + "…" + displayRefName(b.name),
+          subtitle: files.length + " files changed",
           files,
           refetch: fetchFiles,
           actions: [
@@ -2411,8 +2420,26 @@
         onInput: (e) => { newBranchName = e.target.value; },
         onKeydown: (e) => { if (e.key === "Enter") createBranch(); },
       });
+      const branchData = state.branches || { local: [], remote: [] };
+      const compareRefs = allCompareRefs(branchData.local || [], branchData.remote || []);
+      const compareSelect = h("select", {
+        class: "input branch-compare-select",
+        title: "Compare base",
+        value: state.branchCompareBase || "",
+        onChange: (e) => {
+          state.branchCompareBase = e.target.value;
+          resetUniqueCommitCounts(state.branches.local || [], state.branches.remote || []);
+          const seq = ++countLoadSeq;
+          paint();
+          loadUniqueCommitCounts(state.branches.local || [], state.branches.remote || [], seq);
+        },
+      },
+        compareRefs.length === 0 && h("option", { value: "" }, "Compare to HEAD"),
+        ...compareRefs.map((name) => h("option", { value: name, selected: name === state.branchCompareBase }, "to " + displayRefName(name))),
+      );
       const top = h("div", { class: "branches-top" },
         filterInput,
+        compareSelect,
         h("div", { class: "toolbar-spacer" }),
         newInput,
         h("button", { class: "btn-primary", onClick: createBranch, disabled: !newBranchName.trim() }, "Create"),
@@ -2428,6 +2455,13 @@
         // Drop ticks for branches that no longer exist (e.g. after a delete).
         const live = new Set([...local, ...remote].map((b) => b.name));
         for (const n of [...selected]) if (!live.has(n)) selected.delete(n);
+        const options = allCompareRefs(local, remote);
+        compareSelect.replaceChildren(
+          ...(options.length
+            ? options.map((name) => h("option", { value: name, selected: name === state.branchCompareBase }, "to " + displayRefName(name)))
+            : [h("option", { value: "" }, "Compare to HEAD")]),
+        );
+        compareSelect.value = state.branchCompareBase || "";
       }
       paint();
       if (countSeq) loadUniqueCommitCounts(state.branches.local, state.branches.remote, countSeq);
@@ -2501,11 +2535,12 @@
       function commitBadge(b) {
         if (b.isCurrent || typeof b.uniqueCommits !== "number") return null;
         const n = b.uniqueCommits;
+        const base = displayRefName(compareBaseRef());
         return h("span", {
           class: "branch-tag is-commits",
           title: n
-            ? n + " commit" + (n === 1 ? "" : "s") + " reachable from this branch but not HEAD."
-            : "No commits reachable from this branch that HEAD does not already have.",
+            ? n + " commit" + (n === 1 ? "" : "s") + " reachable from this branch but not " + base + "."
+            : "No commits reachable from this branch that " + base + " does not already have.",
         }, n + " commit" + (n === 1 ? "" : "s"));
       }
 
@@ -2963,9 +2998,10 @@
     function historyScope() {
       if (state.historyMode === "all") return { label: "All branches", args: " --all", source: null };
       if (state.historyMode === "source" && state.historySourceBranch) {
+        const base = state.historySourceBase || targetRef();
         return {
-          label: state.historySourceBranch + " not in " + targetLabel(),
-          args: " " + quote(targetRef() + ".." + state.historySourceBranch),
+          label: state.historySourceBranch + " not in " + base,
+          args: " " + quote(base + ".." + state.historySourceBranch),
           source: state.historySourceBranch,
         };
       }
@@ -3260,6 +3296,7 @@
         value: state.historyMode,
         onChange: (e) => {
           state.historyMode = e.target.value;
+          if (state.historyMode !== "source") state.historySourceBase = "";
           selectedCommits.clear();
           state.selectedCommit = null;
           render({ force: true });
@@ -3296,6 +3333,7 @@
       node.append(h("div", { class: "history-top" },
         modeSelect,
         state.historyMode === "source" && sourceSelect,
+        state.historyMode === "source" && h("span", { class: "history-target-chip", title: "Compare base" }, "base " + (state.historySourceBase || targetLabel())),
         state.historyMode === "source" && h("span", { class: "history-target-chip", title: "Cherry-pick target" }, "to " + targetLabel()),
         search,
         progress,
@@ -3310,7 +3348,7 @@
       node.append(h("div", { class: "history-split" }, list, detail));
 
       const scope = historyScope();
-      const cacheKey = [state.historyMode, state.historySourceBranch, targetRef(), state.historyFilter || ""].join("\x1f");
+      const cacheKey = [state.historyMode, state.historySourceBranch, state.historySourceBase || "", targetRef(), state.historyFilter || ""].join("\x1f");
       if (force) {
         logCache.clear();
         detailCache.clear();

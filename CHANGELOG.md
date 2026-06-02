@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.37] — 2026-06-02
+
+### Changed
+- **Branch compare now uses a selectable base branch.** The Branches tab defaults compare workflows to `main`/`master` when available, and both Commits and Compare use the selected base branch like a PR compare.
+
 ## [0.7.36] — 2026-06-02
 
 ### Changed

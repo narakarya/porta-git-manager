@@ -22,7 +22,7 @@ narakarya/porta-git-manager@v0.7.0
 | Tab | What |
 |-----|------|
 | **Status** | File tree (folder-nested) for staged + unstaged + untracked. Per-file and per-hunk Stage / Unstage / Discard. Commit / amend (⌘↵). Unified ↔ Split diff toggle. |
-| **Branches** | Local + remote, facet chips (All / Merged / Unmerged / Local-only / On remote), filter, current marker, unique commit counts, ahead/behind, tracking + merge badges, explicit Commits and Compare actions, multi-select bulk delete, remote-branch delete. |
+| **Branches** | Local + remote, facet chips (All / Merged / Unmerged / Local-only / On remote), filter, current marker, PR-style compare base selector, unique commit counts, ahead/behind, tracking + merge badges, explicit Commits and Compare actions, multi-select bulk delete, remote-branch delete. |
 | **Sync** | Card grid: Fetch, Fetch+prune, Pull, Pull --rebase, Rebase from main/master, Push, Push --force-with-lease. Remote management. |
 | **History** | Commit log with message search, source-branch picker for cross-branch cherry-pick, commit detail card (subject + body + author chip + SHA pills), inline diff with sticky file headers, "Open in viewer" for tree-pane navigation, cherry-pick, and reset. |
 | **Rebase** | Pick / edit / reword / squash / fixup / drop per commit, reorder with ↑↓, abort / continue on pause. |

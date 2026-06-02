@@ -848,6 +848,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
   min-width: 0;
 }
 .branches-top .history-search { flex: 1 1 240px; min-width: 180px; max-width: 360px; }
+.branch-compare-select { flex: 0 1 220px; min-width: 150px; max-width: 260px; }
 .branch-create-input { flex: 0 1 240px; min-width: 170px; max-width: 260px; }
 .branches-list-wrap {
   flex: 1;
