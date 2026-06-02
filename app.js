@@ -2102,6 +2102,7 @@
     let facet = "all";          // local-branch facet: all|merged|unmerged|local-only|on-remote
     let viewingName = null;
     let loaded = false;
+    let countLoadSeq = 0;
 
     function sourceRefName(b) {
       return b.isRemote ? b.name.replace(/^remotes\//, "") : b.name;
@@ -2165,17 +2166,21 @@
       // can flag which local branches are also published vs. local-only.
       const remoteShort = new Set(remoteList.map((b) => b.name.split("/").slice(2).join("/")));
       for (const b of localList) b.hasRemote = remoteShort.has(b.name);
-      await Promise.all([...localList, ...remoteList].map(async (b) => {
-        if (b.isCurrent) {
-          b.uniqueCommits = 0;
-          return;
-        }
-        const cr = await git("rev-list --left-right --count HEAD..." + quote(b.name));
-        if (cr.code !== 0) return;
+      for (const b of localList) if (b.isCurrent) b.uniqueCommits = 0;
+      return { local: localList, remote: remoteList };
+    }
+
+    async function loadUniqueCommitCounts(local, remote, seq) {
+      const branches = [...local, ...remote].filter((b) => !b.isCurrent);
+      for (const b of branches) {
+        if (seq !== countLoadSeq) return;
+        const cr = await git("rev-list --left-right --count " + quote("HEAD..." + b.name));
+        if (seq !== countLoadSeq) return;
+        if (cr.code !== 0) continue;
         const parts = cr.stdout.trim().split(/\s+/);
         b.uniqueCommits = Number(parts[1]) || 0;
-      }));
-      return { local: localList, remote: remoteList };
+      }
+      if (seq === countLoadSeq) paint();
     }
 
     async function checkout(b) {
@@ -2389,6 +2394,7 @@
       const node = pane();
       node.innerHTML = "";
       node.className = "pane is-active branches-pane";
+      let countSeq = null;
 
       const filterInput = h("input", {
         class: "history-search",
@@ -2415,6 +2421,7 @@
       node.append(h("div", { class: "branches-list-wrap" }));
 
       if (!loaded || force) {
+        countSeq = ++countLoadSeq;
         const { local, remote } = await loadBranches();
         state.branches = { local, remote };
         loaded = true;
@@ -2423,6 +2430,7 @@
         for (const n of [...selected]) if (!live.has(n)) selected.delete(n);
       }
       paint();
+      if (countSeq) loadUniqueCommitCounts(state.branches.local, state.branches.remote, countSeq);
     }
 
     function paint() {

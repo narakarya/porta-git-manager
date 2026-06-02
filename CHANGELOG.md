@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.35] — 2026-06-02
+
+### Fixed
+- **Branches render immediately while commit counts load.** Unique commit counts now populate in the background instead of blocking the Branches tab list in repositories with many refs.
+
 ## [0.7.34] — 2026-06-02
 
 ### Added
