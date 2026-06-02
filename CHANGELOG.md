@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.30] — 2026-06-02
+
+### Added
+- **History commits can now be cherry-picked or used as reset targets.** Commit detail cards expose Cherry-pick plus Reset soft/mixed/hard actions, including merge-commit mainline selection and destructive reset confirmation.
+
 ## [0.7.29] — 2026-05-30
 
 ### Fixed

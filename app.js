@@ -2793,6 +2793,7 @@
     let lastFiles = []; // parsed files of the most-recently-rendered commit (used by Tasks 17/18)
     let logCache = new Map(); // filter string -> commits
     let detailCache = new Map(); // short sha -> rendered detail data
+    let actionRunning = false;
 
     function openInViewer(commit, files) {
       if (!files || !files.length) { ui.toast("No diff to show", "info"); return; }
@@ -2843,6 +2844,86 @@
       return detail;
     }
 
+    function commitRef(commit) {
+      return commit.fullSha || commit.sha;
+    }
+
+    async function runHistoryAction(label, cmd, okMsg) {
+      if (actionRunning) return;
+      actionRunning = true;
+      ui.toast("Running " + label + "…", "info", 1200);
+      try {
+        const r = await git(cmd, { timeout: 120000 });
+        if (r.code === 0) ui.toast(okMsg, "success");
+        else ui.toast(r.stderr || label + " failed", "error", 7000);
+        await refresh();
+      } catch (err) {
+        ui.toast((err && err.message) || label + " failed", "error", 7000);
+      } finally {
+        actionRunning = false;
+      }
+    }
+
+    async function cherryPickCommit(commit) {
+      if (actionRunning) return;
+      const parents = (commit.parents || "").split(/\s+/).filter(Boolean);
+      let mainline = "";
+      if (parents.length > 1) {
+        const chosen = await ui.input({
+          title: "Cherry-pick merge commit",
+          body: `Commit ${commit.sha} has ${parents.length} parents. Pick the mainline parent number to keep as baseline.`,
+          placeholder: "1",
+          initial: "1",
+          okLabel: "Cherry-pick",
+        });
+        if (!chosen) return;
+        const n = Number(chosen);
+        if (!Number.isInteger(n) || n < 1 || n > parents.length) {
+          ui.toast("Mainline must be between 1 and " + parents.length, "error");
+          return;
+        }
+        mainline = " -m " + n;
+      } else {
+        const ok = await ui.confirm({
+          title: "Cherry-pick commit?",
+          body: `Apply ${commit.sha} to the current branch. If conflicts happen, Git will pause for manual resolution.`,
+          okLabel: "Cherry-pick",
+        });
+        if (!ok) return;
+      }
+      await runHistoryAction("cherry-pick", "cherry-pick" + mainline + " " + quote(commitRef(commit)), "Cherry-pick complete");
+    }
+
+    async function resetToCommit(commit, mode) {
+      if (actionRunning) return;
+      const copy = {
+        soft: {
+          title: "Reset --soft?",
+          body: `Move HEAD to ${commit.sha} and keep later changes staged.`,
+          danger: false,
+        },
+        mixed: {
+          title: "Reset --mixed?",
+          body: `Move HEAD to ${commit.sha} and keep later changes in the working tree, unstaged.`,
+          danger: false,
+        },
+        hard: {
+          title: "Reset --hard?",
+          body: `Move HEAD to ${commit.sha} and discard tracked working-tree changes. This cannot be undone from here.`,
+          danger: true,
+        },
+      }[mode];
+      if (!copy) return;
+      const ok = await ui.confirm({
+        title: copy.title,
+        body: copy.body,
+        danger: copy.danger,
+        okLabel: "Reset",
+      });
+      if (!ok) return;
+      await runHistoryAction("reset --" + mode, "reset --" + mode + " " + quote(commitRef(commit)), "Reset complete");
+    }
+
     function paintCommitDetail(detailNode, commit, detail) {
       detailNode.innerHTML = "";
 
@@ -2879,6 +2960,13 @@
         "Open in viewer ↗");
       pillRow.append(viewerBtn);
       card.append(pillRow);
+
+      card.append(h("div", { class: "commit-actions" },
+        h("button", { class: "btn-mini", onClick: (e) => { e.stopPropagation(); cherryPickCommit(commit); } }, "Cherry-pick"),
+        h("button", { class: "btn-mini", title: "Move HEAD here; keep later changes staged", onClick: (e) => { e.stopPropagation(); resetToCommit(commit, "soft"); } }, "Reset soft"),
+        h("button", { class: "btn-mini", title: "Move HEAD here; keep later changes unstaged", onClick: (e) => { e.stopPropagation(); resetToCommit(commit, "mixed"); } }, "Reset mixed"),
+        h("button", { class: "btn-mini danger", title: "Move HEAD here and discard tracked working-tree changes", onClick: (e) => { e.stopPropagation(); resetToCommit(commit, "hard"); } }, "Reset hard"),
+      ));
 
       detailNode.append(card);
 

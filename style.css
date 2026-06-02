@@ -1921,6 +1921,13 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   flex-wrap: wrap;
   align-items: center;
 }
+.commit-card .commit-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
 .commit-sha-pill {
   font-family: var(--mono);
   background: rgba(245, 158, 11, 0.1);
