@@ -2593,6 +2593,7 @@
           tags: h("span", { class: "branch-tags" }, mergeBadge(b), commitBadge(b), remoteBadge(b), trackBadge(b)),
           actions: [
             !b.isCurrent && h("button", { class: "btn-mini", onClick: () => showCommitsFromBranch(b) }, "Commits"),
+            canViewDiff && h("button", { class: "btn-mini", onClick: () => diffBranch(b) }, "Compare"),
             !b.isCurrent && h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Switch"),
             !b.isCurrent && h("button", { class: "btn-mini danger", onClick: () => deleteBranch(b.name) }, "Delete"),
           ].filter(Boolean),
@@ -2611,9 +2612,10 @@
             tags: h("span", { class: "branch-tags" }, commitBadge(b)),
             actions: [
               h("button", { class: "btn-mini", onClick: () => showCommitsFromBranch(b) }, "Commits"),
+              canViewDiff && h("button", { class: "btn-mini", onClick: () => diffBranch(b) }, "Compare"),
               h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Check out"),
               h("button", { class: "btn-mini danger", onClick: () => deleteRemoteBranch(b) }, "Delete remote"),
-            ],
+            ].filter(Boolean),
           }));
         }
       }

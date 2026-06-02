@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.36] — 2026-06-02
+
+### Changed
+- **Branch rows now expose Compare explicitly.** Branches keep the Commits shortcut for source-only commit lists and add a visible Compare action for file diffs against `HEAD`.
+
 ## [0.7.35] — 2026-06-02
 
 ### Fixed
