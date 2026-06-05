@@ -1092,6 +1092,15 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.log-row .log-body-line {
+  display: block;
+  color: var(--text-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10.5px;
+  margin-top: 1px;
+}
 .log-row .log-meta {
   font-size: 10px;
   color: var(--text-dim);
@@ -1178,7 +1187,7 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
 .rebase-todo-row .log-sha { color: var(--amber); }
 .rebase-todo-row .log-msg-line {
   color: var(--text);
-  white-space: nowrap;
+  white-space: pre-wrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }

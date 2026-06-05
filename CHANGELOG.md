@@ -4,6 +4,12 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.41] — 2026-06-05
+
+### Fixed
+- **Rebase reword now preserves multiline commit messages.** Reword prompts use a multiline editor, rebase plans keep full commit messages for reference, and rewritten commits are amended from message files so commit bodies are not collapsed to the first line.
+- **History now keeps commit bodies in the log data.** Commit lists parse full messages and show a body preview when available instead of only retaining the subject line.
+
 ## [0.7.40] — 2026-06-02
 
 ### Fixed

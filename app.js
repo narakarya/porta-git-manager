@@ -53,6 +53,7 @@
     diffView: "unified", // "unified" | "split" — toggled by Status tab toolbar
     remotes: [],         // populated by Sync tab
   };
+  const gmGitUtil = window.GMGitUtil;
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -208,7 +209,7 @@
      * extension iframe blocks (silent fail when clicked). Resolves with
      * the trimmed value on confirm, or null on cancel.
      */
-    input({ title, body, placeholder = "", initial = "", okLabel = "OK", cancelLabel = "Cancel" }) {
+    input({ title, body, placeholder = "", initial = "", okLabel = "OK", cancelLabel = "Cancel", multiline = false, rows = 5 }) {
       return new Promise((resolve) => {
         const root = $("#modal-root");
         root.hidden = false;
@@ -224,12 +225,18 @@
           if (e.key === "Escape") { e.stopPropagation(); close(false); }
         };
         window.addEventListener("keydown", onKey, true);
-        const inp = h("input", {
+        const inputProps = {
           class: "input", style: { marginBottom: "12px" },
           placeholder, value: initial,
           onInput: (e) => { value = e.target.value; },
-          onKeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); close(true); } },
-        });
+          onKeydown: (e) => {
+            if (multiline) {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); close(true); }
+            } else if (e.key === "Enter") { e.preventDefault(); close(true); }
+          },
+        };
+        if (multiline) inputProps.rows = rows;
+        const inp = h(multiline ? "textarea" : "input", inputProps);
         const card = h("div", { class: "modal-card" },
           h("h3", null, title),
           body && h("p", null, body),
@@ -3065,14 +3072,13 @@
 
     async function loadLog(filter) {
       const sep = "\x1f";
+      const recSep = "\x1e";
       const grep = filter ? " --grep=" + quote(filter) + " -i" : "";
       const scope = historyScope();
-      const r = await git("log --no-color" + grep + " --pretty=format:" + quote("%h" + sep + "%s" + sep + "%an" + sep + "%ar" + sep + "%H" + sep + "%p") + " -n 100" + scope.args);
+      const format = "%h" + sep + "%an" + sep + "%ar" + sep + "%H" + sep + "%p" + sep + "%B" + recSep;
+      const r = await git("log --no-color" + grep + " --pretty=format:" + quote(format) + " -n 100" + scope.args);
       if (r.code !== 0) return [];
-      return r.stdout.split("\n").filter(Boolean).map((line) => {
-        const [sha, msg, author, when, fullSha, parents] = line.split(sep);
-        return { sha, msg, author, when, fullSha, parents: (parents || "").trim(), source: scope.source };
-      });
+      return gmGitUtil.parseHistoryLog(r.stdout, sep, recSep).map((commit) => Object.assign(commit, { source: scope.source }));
     }
 
     async function loadCommitDetail(commit) {
@@ -3453,6 +3459,8 @@
             },
           })
           : null;
+        const rowTitle = c.fullMessage || c.msg;
+        const bodyPreview = (c.body || "").trim();
         const row = h("div", {
           class: "log-row" + (state.historyMode === "source" ? " has-check" : "") + (state.selectedCommit === c.sha ? " is-selected" : "") + (checked ? " is-checked" : ""),
           onClick: () => {
@@ -3466,7 +3474,8 @@
           chip,
           h("span", { class: "log-sha" }, c.sha),
           h("span", null,
-            h("span", { class: "log-msg-line", title: c.msg, html: window.GMText.highlightMatches(c.msg, (state.historyFilter || "").toLowerCase()) }),
+            h("span", { class: "log-msg-line", title: rowTitle, html: window.GMText.highlightMatches(c.msg, (state.historyFilter || "").toLowerCase()) }),
+            bodyPreview && h("span", { class: "log-body-line", title: rowTitle, html: window.GMText.highlightMatches(bodyPreview, (state.historyFilter || "").toLowerCase()) }),
             h("span", { class: "log-meta" }, `${c.author} · ${c.when}` + (c.source ? " · " + c.source : "")),
           ),
         );
@@ -3489,17 +3498,15 @@
 
     async function buildPlan() {
       const sep = "\x1f";
-      const r = await git("log --reverse --no-color --pretty=format:" + quote("%h" + sep + "%s") + " " + quote(state.rebaseTarget) + "..HEAD");
+      const recSep = "\x1e";
+      const r = await git("log --reverse --no-color --pretty=format:" + quote("%h" + sep + "%B" + recSep) + " " + quote(state.rebaseTarget) + "..HEAD");
       if (r.code !== 0) {
         ui.toast(r.stderr || "Bad target", "error", 5000);
         state.rebasePlan = [];
         render();
         return;
       }
-      state.rebasePlan = r.stdout.split("\n").filter(Boolean).map((line) => {
-        const [sha, msg] = line.split(sep);
-        return { sha, msg, op: "pick" };
-      });
+      state.rebasePlan = gmGitUtil.parseRebaseLog(r.stdout, sep, recSep);
       render();
     }
 
@@ -3509,31 +3516,30 @@
         ui.toast("First commit cannot be 'squash' — change to 'pick'", "error", 4000);
         return;
       }
-      // Build todo: drop -> skipped; reword -> pick + exec amend with the
-      // user-provided message. Other ops -> emitted as-is.
-      const lines = [];
-      for (const c of state.rebasePlan) {
-        if (c.op === "drop") continue;
-        if (c.op === "reword") {
-          if (!c.newMsg || !c.newMsg.trim()) {
-            ui.toast(`Commit ${c.sha} is marked reword but has no new message. Re-select to enter one.`, "error", 5000);
-            return;
-          }
-          lines.push(`pick ${c.sha} ${c.msg}`);
-          lines.push(`exec git commit --amend -m ${quote(c.newMsg.trim())}`);
-        } else {
-          lines.push(`${c.op} ${c.sha} ${c.msg}`);
-        }
+      const tmpBase = "/tmp/porta-rebase-" + Date.now();
+      let rebaseSpec;
+      try {
+        rebaseSpec = gmGitUtil.buildRebaseTodo(state.rebasePlan, {
+          messagePathFor: (_commit, index) => tmpBase + "/message-" + index + ".txt",
+        });
+      } catch (err) {
+        ui.toast(err.message || "Could not build rebase todo", "error", 5000);
+        return;
       }
-      const todo = lines.join("\n");
-      const tmp = "/tmp/porta-rebase-todo-" + Date.now();
-      const write = await sh("cat > " + quote(tmp) + " <<'PORTA_EOF'\n" + todo + "\nPORTA_EOF");
+      const mkdir = await sh("mkdir -p " + quote(tmpBase));
+      if (mkdir.code !== 0) { ui.toast("Could not prepare reword messages", "error"); return; }
+      for (const file of rebaseSpec.messageFiles) {
+        const msgWrite = await sh("printf %s " + quote(file.message) + " > " + quote(file.path));
+        if (msgWrite.code !== 0) { ui.toast("Could not write reword message", "error"); return; }
+      }
+      const tmp = tmpBase + "/todo";
+      const write = await sh("printf %s " + quote(rebaseSpec.todo + "\n") + " > " + quote(tmp));
       if (write.code !== 0) { ui.toast("Could not write todo", "error"); return; }
       const cmd = "GIT_SEQUENCE_EDITOR=" + quote("cp " + tmp) + " GIT_EDITOR=true git rebase -i " + quote(state.rebaseTarget);
       ui.toast("Rebasing…", "info", 1500);
       const r = await sh(cmd, { timeout: 120000 });
-      await sh("rm -f " + quote(tmp));
       await detectRebase();
+      if (!state.rebaseInProgress) await sh("rm -rf " + quote(tmpBase));
       if (r.code === 0 && !state.rebaseInProgress) {
         state.rebasePlan = [];
         ui.toast("Rebase complete", "success");
@@ -3625,6 +3631,8 @@
                 placeholder: "New commit message",
                 initial: c.newMsg || c.msg,
                 okLabel: "Set message",
+                multiline: true,
+                rows: 7,
               });
               if (msg == null) {
                 // Cancelled — revert select to previous op without re-render.
