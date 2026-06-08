@@ -4580,7 +4580,7 @@
       if (e.metaKey || e.ctrlKey) return;
       const k = e.key.toLowerCase();
       if (["1", "2", "3", "4", "5", "6", "7", "8"].includes(k)) {
-        const tab = ["status", "branches", "sync", "history", "rebase", "stash", "tags", "pr"][parseInt(k, 10) - 1];
+        const tab = ["status", "history", "sync", "branches", "rebase", "stash", "tags", "pr"][parseInt(k, 10) - 1];
         e.preventDefault();
         activateTab(tab);
       } else if (k === "r") {

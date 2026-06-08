@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.42] — 2026-06-08
+
+### Changed
+- **The main tab order now puts History before Sync and Branches.** The menu and number-key shortcuts now follow Status, History, Sync, Branches, Rebase, Stash, Tags, PR.
+
 ## [0.7.41] — 2026-06-05
 
 ### Fixed
