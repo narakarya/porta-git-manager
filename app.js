@@ -2283,25 +2283,25 @@
 
     async function deleteBranch(name) {
       const ok = await ui.confirm({
-        title: "Delete branch?",
-        body: `Delete local branch "${name}"? If it has unmerged commits, you'll be prompted to force-delete.`,
-        danger: true, okLabel: "Delete",
+        title: "Remove branch?",
+        body: `Remove local branch "${name}"? If it has unmerged commits, you'll be asked before force-removing it.`,
+        danger: true, okLabel: "Remove",
       });
       if (!ok) return;
       let r = await git("branch -d " + quote(name));
       if (r.code !== 0) {
         const force = await ui.confirm({
-          title: "Force delete?",
-          body: `"${name}" isn't fully merged. Force-deleting drops the unmerged commits.`,
-          danger: true, okLabel: "Force delete",
+          title: "Force remove branch?",
+          body: `"${name}" isn't fully merged. Force-removing drops the unmerged commits.`,
+          danger: true, okLabel: "Force remove",
         });
         if (!force) return;
         r = await git("branch -D " + quote(name));
       }
       if (r.code === 0) {
-        ui.toast("Deleted " + name, "success");
+        ui.toast("Removed " + name, "success");
         await refresh();
-      } else ui.toast(r.stderr || "Delete failed", "error", 5000);
+      } else ui.toast(r.stderr || "Remove failed", "error", 5000);
     }
 
     // Parse a remotes/<remote>/<branch...> ref into its remote + branch parts.
@@ -2313,17 +2313,17 @@
     async function deleteRemoteBranch(b) {
       const { remote, branch } = remoteParts(b.name);
       const ok = await ui.confirm({
-        title: "Delete remote branch?",
+        title: "Remove remote branch?",
         body: `Run \`git push --delete ${remote} ${branch}\`. This removes the branch on ${remote} — collaborators may still have it locally.`,
-        danger: true, okLabel: "Delete remote",
+        danger: true, okLabel: "Remove remote",
       });
       if (!ok) return;
       const r = await sh("git push --delete " + quote(remote) + " " + quote(branch), { timeout: 60000 });
       if (r.code === 0) { ui.toast("Removed " + branch + " from " + remote, "success"); await refresh(); }
-      else ui.toast(r.stderr || "Remote delete failed", "error", 5000);
+      else ui.toast(r.stderr || "Remote remove failed", "error", 5000);
     }
 
-    // Bulk delete every ticked branch. Locals go through `branch -d` with a
+    // Bulk remove every ticked branch. Locals go through `branch -d` with a
     // single follow-up force prompt for any that weren't fully merged; remotes
     // go through `push --delete`. One confirm up front covers the whole set.
     async function deleteSelected() {
@@ -2335,9 +2335,9 @@
       if (locals.length) lines.push("Local: " + locals.join(", "));
       if (remotes.length) lines.push("Remote: " + remotes.map((n) => { const p = remoteParts(n); return p.remote + "/" + p.branch; }).join(", "));
       const ok = await ui.confirm({
-        title: `Delete ${names.length} branch${names.length > 1 ? "es" : ""}?`,
-        body: lines.join(" · ") + ". Unmerged local branches will ask before force-deleting.",
-        danger: true, okLabel: "Delete",
+        title: `Remove ${names.length} branch${names.length > 1 ? "es" : ""}?`,
+        body: lines.join(" · ") + ". Unmerged local branches will ask before force-removing.",
+        danger: true, okLabel: "Remove",
       });
       if (!ok) return;
       const unmerged = [];
@@ -2347,9 +2347,9 @@
       }
       if (unmerged.length) {
         const force = await ui.confirm({
-          title: "Force delete unmerged?",
-          body: `Not fully merged: ${unmerged.join(", ")}. Force-deleting drops their unmerged commits.`,
-          danger: true, okLabel: "Force delete",
+          title: "Force remove unmerged?",
+          body: `Not fully merged: ${unmerged.join(", ")}. Force-removing drops their unmerged commits.`,
+          danger: true, okLabel: "Force remove",
         });
         if (force) for (const n of unmerged) await git("branch -D " + quote(n));
       }
@@ -2360,7 +2360,7 @@
         if (r.code !== 0) remoteFail++;
       }
       selected.clear();
-      ui.toast(remoteFail ? `Done — ${remoteFail} remote delete(s) failed` : "Deleted selected branches", remoteFail ? "error" : "success");
+      ui.toast(remoteFail ? `Done — ${remoteFail} remote remove(s) failed` : "Removed selected branches", remoteFail ? "error" : "success");
       await refresh();
     }
 
@@ -2415,8 +2415,8 @@
               },
             },
             !b.isCurrent && {
-              label: b.isRemote ? "Delete remote" : "Delete",
-              title: b.isRemote ? "Delete this remote branch" : "Delete this branch",
+              label: b.isRemote ? "Remove remote" : "Remove",
+              title: b.isRemote ? "Remove this remote branch" : "Remove this branch",
               danger: true,
               onClick: ({ close }) => {
                 close();
@@ -2610,6 +2610,38 @@
         return b.isRemote ? remoteParts(b.name).branch === "main" : b.name === "main";
       }
 
+      async function copyBranchName(name) {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(name);
+          } else {
+            const input = h("textarea", {
+              value: name,
+              readOnly: true,
+              style: { position: "fixed", opacity: "0", pointerEvents: "none" },
+            });
+            document.body.appendChild(input);
+            input.select();
+            const ok = document.execCommand("copy");
+            input.remove();
+            if (!ok) throw new Error("copy failed");
+          }
+          ui.toast("Copied branch name", "success", 1200);
+        } catch (_) {
+          ui.toast("Could not copy branch name", "error", 2500);
+        }
+      }
+
+      function copyBranchButton(b) {
+        return h("button", {
+          class: "btn-mini branch-copy-btn",
+          title: "Copy branch name",
+          "aria-label": "Copy branch name " + b.name,
+          onClick: () => copyBranchName(b.name),
+          innerHTML: '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" aria-hidden="true"><rect x="5" y="3" width="8" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 6v6.5A1.5 1.5 0 0 0 4.5 14H10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+        });
+      }
+
       function branchRow(b, opts) {
         // Column 1 is now a single shared slot: green dot if this is the current
         // branch, otherwise a checkbox (or a transparent spacer for unselectable
@@ -2673,7 +2705,7 @@
           h("span", { class: "bulk-count" }, selected.size + " selected"),
           h("div", { style: { flex: "1" } }),
           h("button", { class: "btn-mini", onClick: () => { selected.clear(); paint(); } }, "Clear"),
-          h("button", { class: "btn-mini danger", onClick: deleteSelected }, "Delete selected"),
+          h("button", { class: "btn-mini danger", onClick: deleteSelected }, "Remove selected"),
         ));
       }
 
@@ -2689,10 +2721,11 @@
           onActivate: canViewDiff ? diffBranch : null,
           tags: h("span", { class: "branch-tags" }, mergeBadge(b), commitBadge(b), remoteBadge(b), trackBadge(b)),
           actions: [
+            copyBranchButton(b),
             !b.isCurrent && h("button", { class: "btn-mini", onClick: () => showCommitsFromBranch(b) }, "Commits"),
             canViewDiff && h("button", { class: "btn-mini", onClick: () => diffBranch(b) }, "Compare"),
             !b.isCurrent && h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Switch"),
-            !b.isCurrent && h("button", { class: "btn-mini danger", onClick: () => deleteBranch(b.name) }, "Delete"),
+            !b.isCurrent && h("button", { class: "btn-mini danger", onClick: () => deleteBranch(b.name) }, "Remove"),
           ].filter(Boolean),
         }));
       }
@@ -2708,10 +2741,11 @@
             onActivate: canViewDiff ? diffBranch : null,
             tags: h("span", { class: "branch-tags" }, commitBadge(b)),
             actions: [
+              copyBranchButton(b),
               h("button", { class: "btn-mini", onClick: () => showCommitsFromBranch(b) }, "Commits"),
               canViewDiff && h("button", { class: "btn-mini", onClick: () => diffBranch(b) }, "Compare"),
               h("button", { class: "btn-mini", onClick: () => checkout(b) }, "Check out"),
-              h("button", { class: "btn-mini danger", onClick: () => deleteRemoteBranch(b) }, "Delete remote"),
+              h("button", { class: "btn-mini danger", onClick: () => deleteRemoteBranch(b) }, "Remove remote"),
             ].filter(Boolean),
           }));
         }

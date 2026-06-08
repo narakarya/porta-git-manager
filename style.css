@@ -954,6 +954,14 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
   gap: 4px;
   flex-shrink: 0;
 }
+.branch-copy-btn {
+  width: 26px;
+  padding-inline: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.branch-copy-btn svg { flex: 0 0 auto; opacity: 0.9; }
 
 /* ─── History pane ───────────────────────────────────────────────────────── */
 .pane.is-active.history-pane { display: flex; flex-direction: column; height: 100%; }

@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.43] — 2026-06-08
+
+### Changed
+- **Branches can copy and remove branch refs more clearly.** Branch rows now include an icon button to copy the branch name, and branch deletion actions are presented as Remove with explicit local, remote, bulk, and force-remove confirmations.
+
 ## [0.7.42] — 2026-06-08
 
 ### Changed
