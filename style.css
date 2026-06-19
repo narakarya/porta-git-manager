@@ -343,18 +343,14 @@ html[data-gm-theme="paper"] ::selection {
   min-width: 112px;
   max-width: 136px;
   flex: 0 0 auto;
-  appearance: none;
-  padding-right: 28px;
-  background-image: linear-gradient(45deg, transparent 50%, var(--text-mute) 50%), linear-gradient(135deg, var(--text-mute) 50%, transparent 50%);
-  background-position: calc(100% - 16px) 50%, calc(100% - 10px) 50%;
-  background-size: 6px 6px, 6px 6px;
-  background-repeat: no-repeat;
+  appearance: auto;
+  padding-right: 8px;
+  background-image: none;
 }
 .theme-select:focus,
 .theme-select:focus-visible {
   border-color: rgba(96, 165, 250, .42);
   box-shadow: 0 0 0 2px rgba(96, 165, 250, .10);
-  background-image: linear-gradient(45deg, transparent 50%, var(--blue) 50%), linear-gradient(135deg, var(--blue) 50%, transparent 50%);
 }
 .theme-select option {
   background: var(--bg-pane);
@@ -2426,10 +2422,8 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 }
 .md-body .md-mermaid svg {
   display: block;
-  width: var(--mermaid-w);
-  height: var(--mermaid-h);
-  transform: scale(var(--mermaid-scale));
-  transform-origin: top left;
+  width: calc(var(--mermaid-w) * var(--mermaid-scale));
+  height: calc(var(--mermaid-h) * var(--mermaid-scale));
   max-width: none;
   max-height: none;
 }
@@ -2497,9 +2491,6 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .md-body .md-mermaid.is-fullscreen .md-mermaid-viewport {
   max-height: none;
   height: calc(100% - 34px);
-}
-.md-body .md-mermaid.is-fullscreen svg {
-  max-width: none;
 }
 .md-body .md-mermaid[data-mermaid-theme="graphite"] {
   --mermaid-bg: #25252d;

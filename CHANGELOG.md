@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.49] — 2026-06-19
+
+### Fixed
+- **Mermaid zoom now keeps diagrams sharp and better contained.** Zooming resizes the rendered SVG instead of scaling it with transforms, which keeps text and lines readable while preserving the scroll viewport.
+
 ## [0.7.48] — 2026-06-19
 
 ### Changed
