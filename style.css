@@ -1421,6 +1421,45 @@ textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
   gap: 8px;
 }
 
+.context-menu {
+  position: fixed;
+  z-index: 180;
+  min-width: 156px;
+  padding: 5px;
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius);
+  background: #242426;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.48);
+}
+.context-menu-item {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  padding: 6px 9px;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.context-menu-item:hover,
+.context-menu-item:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.08);
+}
+.context-menu-item.danger { color: var(--red); }
+.context-menu-item:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+.context-menu-item:disabled:hover { background: transparent; }
+.context-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+
 @keyframes modal-in {
   from { opacity: 0; transform: scale(0.96); }
   to   { opacity: 1; transform: scale(1); }
@@ -1688,8 +1727,19 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .md-body strong { color: var(--text); font-weight: 600; }
 .md-body code { font-family: var(--mono); font-size: 11px; background: var(--bg-card);
   border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 5px; }
-.md-body .md-pre { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius);
+.md-body .md-pre { position: relative; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 10px 12px; overflow-x: auto; margin: 0 0 10px; }
+.md-body .md-pre-lang { padding-top: 26px; }
+.md-body .md-pre-lang::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 7px;
+  right: 10px;
+  color: var(--text-dim);
+  font: 600 10px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
 .md-body .md-pre code { background: none; border: none; padding: 0; font-size: 11.5px; line-height: 1.5; color: var(--text); }
 .md-body .md-quote { border-left: 3px solid var(--border-hi); margin: 0 0 10px; padding: 2px 0 2px 12px; color: var(--text-mute); }
 .md-body .md-quote > :last-child { margin-bottom: 0; }
@@ -2223,6 +2273,31 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .md-body .md-mermaid-node text {
   fill: var(--text);
   font: 500 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.md-body .md-mermaid-er-node rect {
+  fill: rgba(39, 39, 42, 0.92);
+  stroke: rgba(96, 165, 250, 0.42);
+}
+.md-body .md-mermaid-er-node line {
+  stroke: var(--border);
+}
+.md-body .md-mermaid-entity {
+  fill: var(--text);
+  font: 600 12px var(--mono);
+}
+.md-body .md-mermaid-field {
+  fill: var(--text-mute);
+  font: 11px var(--mono);
+}
+.md-body .md-mermaid-field-type {
+  fill: var(--syn-type);
+}
+.md-body .md-mermaid-rel-label {
+  fill: var(--text-dim);
+  paint-order: stroke;
+  stroke: var(--bg-input);
+  stroke-width: 4px;
+  font: 10px var(--mono);
 }
 .md-body .md-mermaid-edge {
   stroke: var(--text-dim);

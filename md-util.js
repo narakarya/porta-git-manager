@@ -42,7 +42,7 @@
   // Syntax highlight a code block when GMHi is present and the lang is known.
   function highlight(code, lang) {
     const Hi = typeof window !== "undefined" && window.GMHi;
-    const map = { sh: "shell", bash: "shell", zsh: "shell", py: "python", rb: "ruby", ex: "elixir", exs: "elixir", rs: "rust", ts: "js", tsx: "js", jsx: "js", javascript: "js", typescript: "js" };
+    const map = { shell: "shell", sh: "shell", bash: "shell", zsh: "shell", py: "python", rb: "ruby", ex: "elixir", exs: "elixir", elixir: "elixir", rs: "rust", ts: "js", tsx: "js", jsx: "js", javascript: "js", typescript: "js", yml: "yaml" };
     const l = map[lang] || lang;
     if (!Hi || !l) return escapeHtml(code);
     try {
@@ -54,14 +54,20 @@
     }
   }
 
+  function renderCodeBlock(code, lang) {
+    const label = (lang || "").trim().toLowerCase();
+    const cls = "md-pre" + (label ? " md-pre-lang" : "");
+    const attr = label ? ' data-lang="' + escapeHtml(label) + '"' : "";
+    return '<pre class="' + cls + '"' + attr + "><code>" + highlight(code, label) + "</code></pre>";
+  }
+
 
   function renderMermaid(src) {
     const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n")
       .map((line) => line.trim())
       .filter(Boolean);
-    if (!/^(flowchart|graph)\b/i.test(lines[0] || "")) {
-      return '<pre class="md-pre"><code>' + escapeHtml(src) + "</code></pre>";
-    }
+    if (/^erDiagram\b/i.test(lines[0] || "")) return renderMermaidEr(lines, src);
+    if (!/^(flowchart|graph)\b/i.test(lines[0] || "")) return renderCodeBlock(src, "mermaid");
 
     const nodes = new Map();
     const edges = [];
@@ -120,6 +126,102 @@
       return '<g class="md-mermaid-node" transform="translate(' + p.x + " " + p.y + ')"><rect width="' + nodeW + '" height="' + nodeH + '" rx="6"/><text x="' + (nodeW / 2) + '" y="24" text-anchor="middle">' + escapeHtml(nodes.get(id)) + "</text><title>" + escapeHtml(id) + "</title></g>";
     }).join("");
     return '<div class="md-mermaid"><svg viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Mermaid diagram">' + marker + edgeSvg + nodeSvg + "</svg></div>";
+  }
+
+  function renderMermaidEr(lines, src) {
+    const entities = new Map();
+    const relations = [];
+    let current = null;
+
+    function ensureEntity(name) {
+      const key = String(name || "").trim();
+      if (!key) return null;
+      if (!entities.has(key)) entities.set(key, []);
+      return key;
+    }
+
+    for (const raw of lines.slice(1)) {
+      const line = raw.trim();
+      if (!line || /^%%/.test(line)) continue;
+      const open = /^([A-Za-z_][\w-]*)\s*\{\s*$/.exec(line);
+      if (open) { current = ensureEntity(open[1]); continue; }
+      if (/^\}\s*$/.test(line)) { current = null; continue; }
+      if (current) {
+        const field = /^(\S+)\s+(.+?)\s*$/.exec(line);
+        if (field) entities.get(current).push({ type: field[1], name: field[2] });
+        continue;
+      }
+      const rel = /^([A-Za-z_][\w-]*)\s+([|o}{]+--[|o}{]+)\s+([A-Za-z_][\w-]*)(?:\s*:\s*"?([^"]*)"?\s*)?$/.exec(line);
+      if (rel) {
+        ensureEntity(rel[1]);
+        ensureEntity(rel[3]);
+        relations.push({ from: rel[1], to: rel[3], label: rel[4] || rel[2] });
+      }
+    }
+
+    if (!entities.size) return renderCodeBlock(src, "mermaid");
+
+    const ids = Array.from(entities.keys());
+    const cols = ids.length > 2 ? 2 : 1;
+    const cardW = 250;
+    const gapX = 44;
+    const gapY = 34;
+    const heights = new Map();
+    ids.forEach((id) => {
+      const fields = entities.get(id);
+      const h = Math.max(74, 42 + fields.length * 22);
+      heights.set(id, h);
+    });
+    const rows = Math.ceil(ids.length / cols);
+    const rowHeights = Array.from({ length: rows }, (_, row) => {
+      const rowIds = ids.slice(row * cols, row * cols + cols);
+      return Math.max(...rowIds.map((id) => heights.get(id)));
+    });
+    const rowY = [];
+    rowHeights.reduce((y, h, index) => {
+      rowY[index] = y;
+      return y + h + gapY;
+    }, 18);
+    const positions = new Map();
+    ids.forEach((id, index) => {
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      positions.set(id, { x: 18 + col * (cardW + gapX), y: rowY[row] });
+    });
+    const width = 36 + cols * cardW + (cols - 1) * gapX;
+    const height = rows ? rowY[rows - 1] + rowHeights[rows - 1] + 18 : 120;
+
+    const edgeSvg = relations.map((rel) => {
+      const a = positions.get(rel.from);
+      const b = positions.get(rel.to);
+      if (!a || !b) return "";
+      const ah = heights.get(rel.from);
+      const bh = heights.get(rel.to);
+      const ax = a.x + cardW;
+      const ay = a.y + ah / 2;
+      const bx = b.x;
+      const by = b.y + bh / 2;
+      const sameCol = Math.abs(ax - bx) < 10;
+      const x1 = sameCol ? a.x + cardW / 2 : ax;
+      const y1 = sameCol ? a.y + ah : ay;
+      const x2 = sameCol ? b.x + cardW / 2 : bx;
+      const y2 = sameCol ? b.y : by;
+      const mx = sameCol ? x1 : (x1 + x2) / 2;
+      const my = sameCol ? (y1 + y2) / 2 : (y1 + y2) / 2 - 4;
+      return '<path class="md-mermaid-edge" d="M' + x1 + " " + y1 + " C" + mx + " " + y1 + " " + mx + " " + y2 + " " + x2 + " " + y2 + '" fill="none" stroke-width="1.5" />'
+        + (rel.label ? '<text class="md-mermaid-rel-label" x="' + mx + '" y="' + my + '" text-anchor="middle">' + escapeHtml(rel.label) + "</text>" : "");
+    }).join("");
+
+    const nodeSvg = ids.map((id) => {
+      const p = positions.get(id);
+      const fields = entities.get(id);
+      const h = heights.get(id);
+      const rows = fields.map((field, index) =>
+        '<text class="md-mermaid-field" x="14" y="' + (64 + index * 22) + '"><tspan class="md-mermaid-field-type">' + escapeHtml(field.type) + '</tspan> ' + escapeHtml(field.name) + "</text>"
+      ).join("");
+      return '<g class="md-mermaid-node md-mermaid-er-node" transform="translate(' + p.x + " " + p.y + ')"><rect width="' + cardW + '" height="' + h + '" rx="6"/><line x1="0" x2="' + cardW + '" y1="38" y2="38"/><text class="md-mermaid-entity" x="14" y="25">' + escapeHtml(id) + "</text>" + rows + "</g>";
+    }).join("");
+    return '<div class="md-mermaid md-mermaid-er"><svg viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Mermaid ER diagram">' + edgeSvg + nodeSvg + "</svg></div>";
   }
 
 
@@ -194,15 +296,16 @@
       if (/^\s*$/.test(line)) { i++; continue; }
 
       // fenced code
-      const fence = /^\s*(`{3,}|~{3,})\s*([\w+#-]*)\s*$/.exec(line);
+      const fence = /^\s*(`{3,}|~{3,})\s*([^`]*)$/.exec(line);
       if (fence) {
-        const ch = fence[1][0], len = fence[1].length, lang = fence[2];
+        const ch = fence[1][0], len = fence[1].length, info = (fence[2] || "").trim();
+        const lang = (info.split(/\s+/)[0] || "").replace(/^\{\.?/, "").replace(/\}$/, "");
         const close = new RegExp("^\\s*\\" + ch + "{" + len + ",}\\s*$");
         const buf = [];
         i++;
         while (i < lines.length && !close.test(lines[i])) { buf.push(lines[i]); i++; }
         i++; // closing fence
-        out.push(lang.toLowerCase() === "mermaid" ? renderMermaid(buf.join("\n")) : '<pre class="md-pre"><code>' + highlight(buf.join("\n"), lang.toLowerCase()) + "</code></pre>");
+        out.push(lang.toLowerCase() === "mermaid" ? renderMermaid(buf.join("\n")) : renderCodeBlock(buf.join("\n"), lang.toLowerCase()));
         continue;
       }
 

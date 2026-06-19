@@ -98,6 +98,62 @@
     return i === -1 ? { dir: "", name: p } : { dir: p.slice(0, i + 1), name: p.slice(i + 1) };
   }
 
+  function closeContextMenu() {
+    const menu = document.querySelector(".context-menu");
+    if (menu) menu.remove();
+    window.removeEventListener("pointerdown", onContextMenuPointerDown, true);
+    window.removeEventListener("keydown", onContextMenuKey, true);
+  }
+
+  function onContextMenuPointerDown(e) {
+    if (e.target && e.target.closest && e.target.closest(".context-menu")) return;
+    closeContextMenu();
+  }
+
+  function onContextMenuKey(e) {
+    if (e.key === "Escape") closeContextMenu();
+  }
+
+  function showContextMenu(event, items) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeContextMenu();
+    const activeItems = (items || []).filter(Boolean);
+    if (!activeItems.length) return;
+    const menu = h("div", { class: "context-menu", role: "menu" },
+      ...activeItems.map((item) => item.separator
+        ? h("div", { class: "context-menu-sep", role: "separator" })
+        : h("button", {
+            class: "context-menu-item" + (item.danger ? " danger" : ""),
+            role: "menuitem",
+            disabled: !!item.disabled,
+            onClick: async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              closeContextMenu();
+              if (!item.disabled && item.action) await item.action();
+            },
+          }, item.label)),
+    );
+    document.body.appendChild(menu);
+    const pad = 8;
+    const rect = menu.getBoundingClientRect();
+    const left = Math.min(event.clientX, window.innerWidth - rect.width - pad);
+    const top = Math.min(event.clientY, window.innerHeight - rect.height - pad);
+    menu.style.left = Math.max(pad, left) + "px";
+    menu.style.top = Math.max(pad, top) + "px";
+    setTimeout(() => {
+      window.addEventListener("pointerdown", onContextMenuPointerDown, true);
+      window.addEventListener("keydown", onContextMenuKey, true);
+    }, 0);
+  }
+
+  document.addEventListener("contextmenu", (e) => {
+    if (e.defaultPrevented) return;
+    e.preventDefault();
+    closeContextMenu();
+  });
+
   // ── UI primitives: toast + modal confirm ─────────────────────────────────
   const ui = {
     toast(msg, kind = "info", ms = 2400) {
@@ -765,7 +821,9 @@
    * opts = {
    *   depth?: number,                  // initial padding depth (default 0)
    *   onPick(file, rowEl, event): void,// file click handler
+   *   onContextMenu(file, rowEl, event): void, // optional file context menu
    *   onDirPick(files, rowEl, event): void, // optional folder click handler
+   *   onDirContextMenu?(files, rowEl, event, metaFile, dirPath): void,
    *   renderRow(file, depth): Node,    // builds and returns the file row inner content;
    *                                    // MUST NOT attach its own click handler
    *                                    // (we attach onPick to the wrapper button)
@@ -778,7 +836,9 @@
   function gmRenderFileTree(nav, files, opts) {
     const node = gmFileTree(files);
     const onPick = opts.onPick || (() => {});
+    const onContextMenu = opts.onContextMenu || null;
     const onDirPick = opts.onDirPick || null;
+    const onDirContextMenu = opts.onDirContextMenu || null;
     const renderRow = opts.renderRow || defaultDiffRow;
     const renderDirRow = opts.renderDirRow || null;
     const dirFileFor = opts.dirFileFor || null;
@@ -827,6 +887,9 @@
           chev.textContent = collapsed ? "▸" : "▾";
           folderIcon._use.setAttribute("href", collapsed ? "#ficon-folder" : "#ficon-folder-open");
         });
+        if (onDirContextMenu) {
+          dirRow.addEventListener("contextmenu", (e) => onDirContextMenu(dirFiles, dirRow, e, metaFile, dirPath));
+        }
         parent.append(dirRow);
         parent.append(childWrap);
         walk(childWrap, dir, depth + 1, dirPath);
@@ -843,6 +906,7 @@
         }, ...(Array.isArray(inner) ? inner : [inner]));
         row.dataset.path = f.path;
         row.dataset.key = opts.keyFor ? opts.keyFor(f) : f.path;
+        if (onContextMenu) row.addEventListener("contextmenu", (e) => onContextMenu(f, row, e));
         parent.append(row);
       }
     }
@@ -1793,6 +1857,54 @@
       await refresh();
     }
 
+    async function renameStatusFile(file, source) {
+      if (!file || file.submodule) return;
+      const oldPath = String(file.path || "").replace(/\/+$/, "");
+      if (!oldPath) return;
+      const { dir, name } = splitPath(oldPath);
+      const nextName = await ui.input({
+        title: "Rename file",
+        body: oldPath,
+        initial: name,
+        placeholder: name,
+        okLabel: "Rename",
+      });
+      if (!nextName || nextName === name) return;
+      if (nextName.includes("/") || nextName === "." || nextName === "..") {
+        ui.toast("Enter a file name, not a path", "error");
+        return;
+      }
+      const newPath = dir + nextName;
+      const r = file.untracked || source === "untracked"
+        ? await sh("mv -- " + quote(oldPath) + " " + quote(newPath))
+        : await git("mv -- " + quote(oldPath) + " " + quote(newPath));
+      if (r.code === 0) {
+        selectedStatus.delete(statusKey(source, file));
+        state.selectedFile = source + ":" + newPath;
+        ui.toast("Renamed to " + newPath, "success");
+        await refresh();
+      } else {
+        ui.toast(r.stderr || "Rename failed", "error", 5000);
+        await refresh();
+      }
+    }
+
+    function statusContextMenu(file, source, row, event) {
+      if (!file) return;
+      const isStaged = source === "staged";
+      const isUntracked = file.untracked || source === "untracked";
+      showContextMenu(event, [
+        { label: "Rename", disabled: isStaged || file.submodule, action: () => renameStatusFile(file, source) },
+        { separator: true },
+        isStaged
+          ? { label: "Unstage", action: () => unstage(file.path, file.submodule) }
+          : { label: file.submodule ? "Stage all" : "Stage", action: () => stage(file.path, file.submodule) },
+        !isStaged && { label: isUntracked ? "Delete" : "Discard", danger: true, action: () => discard(file) },
+        { separator: true },
+        { label: "Copy path", action: async () => navigator.clipboard?.writeText(file.path) },
+      ]);
+    }
+
     async function discardStatusEntries(entries, label) {
       if (!entries.length) return;
       const ok = await ui.confirm({
@@ -2034,6 +2146,10 @@
           },
           renderDirRow: (_dir, _depth, _files, metaFile, _dirPath, parts) => statusTreeDirRow(metaFile, parts, filter),
           renderRow: (f, _depth) => statusTreeRow(f, sourceFor(f), diffNode, filter),
+          onContextMenu: (f, row, e) => statusContextMenu(f, sourceFor(f), row, e),
+          onDirContextMenu: (_files, row, e, metaFile) => {
+            if (metaFile) statusContextMenu(metaFile, sourceFor(metaFile), row, e);
+          },
           onPick: (f, row, e) => {
             const source = sourceFor(f);
             const key = `${source}:${f.path}`;

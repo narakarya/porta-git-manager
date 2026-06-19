@@ -4,6 +4,17 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.45] — 2026-06-19
+
+### Added
+- **Status rows now have an internal context menu.** Right-clicking a Status
+  file exposes Rename, Stage/Unstage, Discard/Delete, and Copy path actions,
+  while undefined right-click areas suppress the browser's native menu.
+- **Markdown previews render richer code and diagrams.** Fenced code blocks
+  accept language info strings such as `elixir title=example.ex`, show a
+  language badge, and Mermaid `erDiagram` blocks render as inline entity
+  diagrams.
+
 ## [0.7.44] — 2026-06-19
 
 ### Changed

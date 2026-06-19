@@ -36,8 +36,14 @@ test("safeUrl gates schemes", () => {
 
 test("fenced code block escapes content", () => {
   const h = render("```js\nconst x = 1 < 2;\n```");
-  assert.match(h, /<pre class="md-pre"><code>/);
+  assert.match(h, /<pre class="md-pre md-pre-lang" data-lang="js"><code>/);
   assert.match(h, /1 &lt; 2/);
+});
+
+test("fenced code block accepts info strings", () => {
+  const h = render("```elixir title=example.ex\nfn -> :ok end\n```");
+  assert.match(h, /data-lang="elixir"/);
+  assert.match(h, /fn -&gt; :ok end/);
 });
 
 test("unordered + task lists", () => {
@@ -78,6 +84,15 @@ test("renders basic mermaid flowcharts", () => {
   assert.match(h, /<svg/);
   assert.match(h, />Start</);
   assert.match(h, />Done</);
+});
+
+test("renders mermaid er diagrams", () => {
+  const h = render("```mermaid\nerDiagram\n  products ||--o{ product_translations : \"has many\"\n  products {\n    string language\n    text description\n  }\n```");
+  assert.match(h, /class="md-mermaid md-mermaid-er"/);
+  assert.match(h, />products</);
+  assert.match(h, /product_translations/);
+  assert.match(h, /string/);
+  assert.match(h, /description/);
 });
 
 test("empty input yields empty string", () => {
