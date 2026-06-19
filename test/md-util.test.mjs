@@ -72,6 +72,14 @@ test("bare URL autolink", () => {
     /<a href="https:\/\/example\.com\/x"[^>]*>https:\/\/example\.com\/x<\/a>/);
 });
 
+test("renders basic mermaid flowcharts", () => {
+  const h = render("```mermaid\nflowchart TD\n  A[Start] --> B[Done]\n```");
+  assert.match(h, /class="md-mermaid"/);
+  assert.match(h, /<svg/);
+  assert.match(h, />Start</);
+  assert.match(h, />Done</);
+});
+
 test("empty input yields empty string", () => {
   assert.equal(render(""), "");
   assert.equal(render(null), "");

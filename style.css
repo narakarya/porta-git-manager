@@ -2166,3 +2166,64 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   }
   .empty-files { padding: 8px 10px; }
 }
+
+
+/* Status preview polish. */
+.status-list {
+  overflow-x: hidden;
+}
+.status-list .diff-tree-row {
+  max-width: 100%;
+  overflow: hidden;
+}
+.status-list .diff-tree-file .file-name,
+.status-list .diff-tree-dir .file-name {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-list .diff-tree-file .row-actions,
+.status-list .diff-tree-dir .row-actions {
+  flex: 0 0 auto;
+}
+.status-diff .hunk-header {
+  justify-content: flex-end;
+  min-height: 24px;
+  padding: 3px 8px;
+  font-size: 0;
+}
+.status-diff .hunk-header .hunk-actions {
+  font-size: 10px;
+  opacity: 1;
+}
+
+/* Markdown preview Mermaid diagrams. */
+.md-body .md-mermaid {
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+  margin: 0 0 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+}
+.md-body .md-mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.md-body .md-mermaid-node rect {
+  fill: rgba(96, 165, 250, 0.1);
+  stroke: rgba(96, 165, 250, 0.45);
+}
+.md-body .md-mermaid-node text {
+  fill: var(--text);
+  font: 500 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.md-body .md-mermaid-edge {
+  stroke: var(--text-dim);
+}

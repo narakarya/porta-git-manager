@@ -54,6 +54,75 @@
     }
   }
 
+
+  function renderMermaid(src) {
+    const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (!/^(flowchart|graph)\b/i.test(lines[0] || "")) {
+      return '<pre class="md-pre"><code>' + escapeHtml(src) + "</code></pre>";
+    }
+
+    const nodes = new Map();
+    const edges = [];
+
+    function nodeId(raw) {
+      return String(raw || "")
+        .trim()
+        .replace(/\[[^\]]*\]|\([^)]*\)|\{[^}]*\}/g, "")
+        .trim();
+    }
+
+    function nodeLabel(raw) {
+      const s = String(raw || "").trim();
+      const opens = [s.indexOf("["), s.indexOf("("), s.indexOf("{")].filter((idx) => idx >= 0);
+      const open = opens.length ? Math.min(...opens) : -1;
+      if (open < 0) return nodeId(s);
+      const closeChar = s[open] === "[" ? "]" : s[open] === "(" ? ")" : "}";
+      const close = s.lastIndexOf(closeChar);
+      return close > open ? s.slice(open + 1, close).trim() : nodeId(s);
+    }
+
+    for (const line of lines.slice(1)) {
+      if (/^%%/.test(line)) continue;
+      const match = /^(.+?)\s*(-->|---|==>|-.->)\s*(.+?)(?:\s*$|\s*;\s*$)/.exec(line);
+      if (!match) continue;
+      const from = nodeId(match[1]);
+      const to = nodeId(match[3]);
+      if (!from || !to) continue;
+      if (!nodes.has(from)) nodes.set(from, nodeLabel(match[1]));
+      if (!nodes.has(to)) nodes.set(to, nodeLabel(match[3]));
+      edges.push([from, to]);
+    }
+
+    if (!nodes.size) return '<pre class="md-pre"><code>' + escapeHtml(src) + "</code></pre>";
+
+    const ids = Array.from(nodes.keys());
+    const width = 260;
+    const nodeW = 160;
+    const nodeH = 38;
+    const gapY = 38;
+    const positions = new Map(ids.map((id, index) => [id, { x: 50, y: 24 + index * (nodeH + gapY) }]));
+    const height = 40 + ids.length * (nodeH + gapY);
+    const marker = '<defs><marker id="md-mermaid-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>';
+    const edgeSvg = edges.map(([from, to]) => {
+      const a = positions.get(from);
+      const b = positions.get(to);
+      if (!a || !b) return "";
+      const x1 = a.x + nodeW / 2;
+      const y1 = a.y + nodeH;
+      const x2 = b.x + nodeW / 2;
+      const y2 = b.y;
+      return '<path class="md-mermaid-edge" d="M' + x1 + " " + y1 + " C" + x1 + " " + (y1 + 24) + " " + x2 + " " + (y2 - 24) + " " + x2 + " " + y2 + '" fill="none" stroke-width="1.5" marker-end="url(#md-mermaid-arrow)" />';
+    }).join("");
+    const nodeSvg = ids.map((id) => {
+      const p = positions.get(id);
+      return '<g class="md-mermaid-node" transform="translate(' + p.x + " " + p.y + ')"><rect width="' + nodeW + '" height="' + nodeH + '" rx="6"/><text x="' + (nodeW / 2) + '" y="24" text-anchor="middle">' + escapeHtml(nodes.get(id)) + "</text><title>" + escapeHtml(id) + "</title></g>";
+    }).join("");
+    return '<div class="md-mermaid"><svg viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Mermaid diagram">' + marker + edgeSvg + nodeSvg + "</svg></div>";
+  }
+
+
   // ── Inline ────────────────────────────────────────────────────────────────
   // Inline-code spans are extracted first so their contents are never treated
   // as markdown; everything else is escaped then marked up.
@@ -133,7 +202,7 @@
         i++;
         while (i < lines.length && !close.test(lines[i])) { buf.push(lines[i]); i++; }
         i++; // closing fence
-        out.push('<pre class="md-pre"><code>' + highlight(buf.join("\n"), lang.toLowerCase()) + "</code></pre>");
+        out.push(lang.toLowerCase() === "mermaid" ? renderMermaid(buf.join("\n")) : '<pre class="md-pre"><code>' + highlight(buf.join("\n"), lang.toLowerCase()) + "</code></pre>");
         continue;
       }
 

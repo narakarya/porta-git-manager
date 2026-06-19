@@ -4,6 +4,16 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.44] — 2026-06-19
+
+### Changed
+- **Status list polish**: long filenames now truncate inside the fixed-width
+  file list instead of pushing stage/discard actions out of view.
+- **Cleaner status previews**: diff hunk coordinate headers are hidden in the
+  status preview while keeping per-hunk actions available.
+- **Markdown previews**: fenced `mermaid` flowcharts render inline as simple
+  SVG diagrams, alongside the existing Markdown styling.
+
 ## [0.7.43] — 2026-06-08
 
 ### Changed
