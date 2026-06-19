@@ -67,6 +67,20 @@
       .filter((line) => line && !/^%%/.test(line) && !/^title\s*:/i.test(line));
   }
 
+  function mermaidTheme(src) {
+    const allowed = new Set(["soft", "graphite", "console", "paper", "forest", "contrast"]);
+    const text = String(src || "");
+    const comment = text.match(/^%%\s*theme\s*:\s*([a-z0-9_-]+)\s*$/im);
+    const init = text.match(/^%%\{[\s\S]*?"theme"\s*:\s*"([^"]+)"[\s\S]*?\}%%\s*$/im);
+    const raw = ((comment && comment[1]) || (init && init[1]) || "soft").toLowerCase();
+    return allowed.has(raw) ? raw : "soft";
+  }
+
+  function mermaidWrap(src, classes, width, height, label, body) {
+    const theme = mermaidTheme(src);
+    return '<div class="' + classes + '" data-mermaid-theme="' + theme + '"><svg width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="' + label + '">' + body + "</svg></div>";
+  }
+
   function stripMermaidQuotes(s) {
     const out = String(s || "").trim();
     return (/^".*"$/.test(out) || /^\[.*\]$/.test(out)) ? out.slice(1, -1).trim() : out;
@@ -167,7 +181,7 @@
         + svgText(nodes.get(id), nodeW / 2, 24, ' text-anchor="middle"')
         + "<title>" + escapeHtml(id) + "</title></g>";
     }).join("");
-    return '<div class="md-mermaid"><svg viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Mermaid diagram">' + marker + edgeSvg + nodeSvg + "</svg></div>";
+    return mermaidWrap(src, "md-mermaid", width, height, "Mermaid diagram", marker + edgeSvg + nodeSvg);
   }
 
   function renderMermaidState(lines, src) {
@@ -225,7 +239,7 @@
       return '<g class="md-mermaid-node md-mermaid-state-node" transform="translate(' + p.x + " " + p.y + ')"><rect width="' + p.w + '" height="' + p.h + '" rx="8"/>'
         + svgText(states.get(id), p.w / 2, 26, ' text-anchor="middle"') + "</g>";
     }).join("");
-    return '<div class="md-mermaid md-mermaid-state"><svg viewBox="0 0 ' + actualWidth + ' 112" role="img" aria-label="Mermaid state diagram">' + marker + edgeSvg + nodeSvg + "</svg></div>";
+    return mermaidWrap(src, "md-mermaid md-mermaid-state", actualWidth, 112, "Mermaid state diagram", marker + edgeSvg + nodeSvg);
   }
 
   function renderMermaidSequence(lines, src) {
@@ -281,7 +295,7 @@
       return '<path class="md-mermaid-edge" d="M' + x1 + " " + y + " L" + x2 + " " + y + '" fill="none" stroke-width="1.5" marker-end="url(#md-mermaid-seq-arrow)" />'
         + '<text class="md-mermaid-rel-label" x="' + labelX + '" y="' + (y - 7) + '" text-anchor="middle">' + escapeHtml(msg.text) + "</text>";
     }).join("");
-    return '<div class="md-mermaid md-mermaid-sequence"><svg viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Mermaid sequence diagram">' + marker + lifelines + msgSvg + "</svg></div>";
+    return mermaidWrap(src, "md-mermaid md-mermaid-sequence", width, height, "Mermaid sequence diagram", marker + lifelines + msgSvg);
   }
 
   function renderMermaidEr(lines, src) {
@@ -377,7 +391,7 @@
       ).join("");
       return '<g class="md-mermaid-node md-mermaid-er-node" transform="translate(' + p.x + " " + p.y + ')"><rect width="' + cardW + '" height="' + h + '" rx="6"/><line x1="0" x2="' + cardW + '" y1="38" y2="38"/><text class="md-mermaid-entity" x="14" y="25">' + escapeHtml(id) + "</text>" + rows + "</g>";
     }).join("");
-    return '<div class="md-mermaid md-mermaid-er"><svg viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Mermaid ER diagram">' + edgeSvg + nodeSvg + "</svg></div>";
+    return mermaidWrap(src, "md-mermaid md-mermaid-er", width, height, "Mermaid ER diagram", edgeSvg + nodeSvg);
   }
 
 

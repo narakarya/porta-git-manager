@@ -2252,69 +2252,158 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 
 /* Markdown preview Mermaid diagrams. */
 .md-body .md-mermaid {
+  --mermaid-bg: #181a20;
+  --mermaid-border: rgba(255,255,255,.09);
+  --mermaid-node-bg: rgba(91, 141, 239, 0.14);
+  --mermaid-node-border: rgba(91, 141, 239, 0.42);
+  --mermaid-er-bg: rgba(34, 37, 45, 0.96);
+  --mermaid-state-bg: rgba(55, 184, 137, 0.13);
+  --mermaid-state-border: rgba(55, 184, 137, 0.38);
+  --mermaid-text: #eceff4;
+  --mermaid-muted: #a8b0bd;
+  --mermaid-dim: #7c8491;
+  --mermaid-line: rgba(168, 176, 189, 0.72);
+  --mermaid-label-stroke: var(--mermaid-bg);
+  --mermaid-type: #7dd3fc;
   display: block;
   max-width: 100%;
   overflow: auto;
   margin: 0 0 10px;
-  padding: 10px;
-  border: 1px solid var(--border);
+  padding: 12px;
+  border: 1px solid var(--mermaid-border);
   border-radius: var(--radius);
-  background: var(--bg-input);
+  background: var(--mermaid-bg);
 }
 .md-body .md-mermaid svg {
   display: block;
-  max-width: 100%;
+  width: auto;
+  max-width: min(100%, 680px);
+  max-height: 380px;
   height: auto;
 }
+.md-body .md-mermaid-er svg,
+.md-body .md-mermaid-sequence svg {
+  max-width: min(100%, 760px);
+}
 .md-body .md-mermaid-node rect {
-  fill: rgba(96, 165, 250, 0.1);
-  stroke: rgba(96, 165, 250, 0.45);
+  fill: var(--mermaid-node-bg);
+  stroke: var(--mermaid-node-border);
 }
 .md-body .md-mermaid-node text {
-  fill: var(--text);
+  fill: var(--mermaid-text);
   font: 500 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
 }
 .md-body .md-mermaid-er-node rect {
-  fill: rgba(39, 39, 42, 0.92);
-  stroke: rgba(96, 165, 250, 0.42);
+  fill: var(--mermaid-er-bg);
+  stroke: var(--mermaid-node-border);
 }
 .md-body .md-mermaid-er-node line {
-  stroke: var(--border);
+  stroke: var(--mermaid-border);
 }
 .md-body .md-mermaid-state-node rect {
-  fill: rgba(52, 211, 153, 0.09);
-  stroke: rgba(52, 211, 153, 0.38);
+  fill: var(--mermaid-state-bg);
+  stroke: var(--mermaid-state-border);
 }
 .md-body .md-mermaid-start {
-  fill: #e7e7eb;
+  fill: var(--mermaid-text);
   stroke: rgba(255,255,255,.28);
 }
 .md-body .md-mermaid-seq-participant text {
-  fill: #f4f4f5;
+  fill: var(--mermaid-text);
   font: 600 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
 }
 .md-body .md-mermaid-seq-participant line {
-  stroke: rgba(255,255,255,.18);
+  stroke: var(--mermaid-border);
   stroke-dasharray: 4 5;
 }
 .md-body .md-mermaid-entity {
-  fill: var(--text);
+  fill: var(--mermaid-text);
   font: 600 12px var(--mono);
 }
 .md-body .md-mermaid-field {
-  fill: var(--text-mute);
+  fill: var(--mermaid-muted);
   font: 11px var(--mono);
 }
 .md-body .md-mermaid-field-type {
-  fill: var(--syn-type);
+  fill: var(--mermaid-type);
 }
 .md-body .md-mermaid-rel-label {
-  fill: var(--text-dim);
+  fill: var(--mermaid-dim);
   paint-order: stroke;
-  stroke: var(--bg-input);
+  stroke: var(--mermaid-label-stroke);
   stroke-width: 4px;
   font: 10px var(--mono);
 }
 .md-body .md-mermaid-edge {
-  stroke: var(--text-dim);
+  stroke: var(--mermaid-line);
+}
+.md-body .md-mermaid[data-mermaid-theme="graphite"] {
+  --mermaid-bg: #25252d;
+  --mermaid-border: rgba(255,255,255,.075);
+  --mermaid-node-bg: rgba(255,255,255,.035);
+  --mermaid-node-border: rgba(255,255,255,.16);
+  --mermaid-er-bg: rgba(31, 31, 38, 0.94);
+  --mermaid-state-bg: rgba(255,255,255,.04);
+  --mermaid-state-border: rgba(255,255,255,.16);
+  --mermaid-text: #e9e9ef;
+  --mermaid-muted: #a5a6ae;
+  --mermaid-dim: #888a93;
+  --mermaid-line: rgba(255,255,255,.22);
+  --mermaid-type: #b9c2d6;
+}
+.md-body .md-mermaid[data-mermaid-theme="console"] {
+  --mermaid-bg: #20222d;
+  --mermaid-border: rgba(146, 191, 205, 0.13);
+  --mermaid-node-bg: rgba(91, 192, 222, 0.08);
+  --mermaid-node-border: rgba(91, 192, 222, 0.38);
+  --mermaid-er-bg: rgba(31, 34, 44, 0.96);
+  --mermaid-state-bg: rgba(137, 221, 171, 0.09);
+  --mermaid-state-border: rgba(137, 221, 171, 0.36);
+  --mermaid-text: #f4f4f6;
+  --mermaid-muted: #b8bec9;
+  --mermaid-dim: #82b6c5;
+  --mermaid-line: rgba(130, 182, 197, 0.74);
+  --mermaid-type: #89ddff;
+}
+.md-body .md-mermaid[data-mermaid-theme="paper"] {
+  --mermaid-bg: #f7f8fb;
+  --mermaid-border: rgba(35, 43, 58, 0.14);
+  --mermaid-node-bg: rgba(37, 99, 235, 0.08);
+  --mermaid-node-border: rgba(37, 99, 235, 0.32);
+  --mermaid-er-bg: rgba(255,255,255,.95);
+  --mermaid-state-bg: rgba(5, 150, 105, 0.08);
+  --mermaid-state-border: rgba(5, 150, 105, 0.3);
+  --mermaid-text: #1f2937;
+  --mermaid-muted: #5f6b7a;
+  --mermaid-dim: #53606f;
+  --mermaid-line: rgba(83, 96, 111, 0.72);
+  --mermaid-type: #2563eb;
+}
+.md-body .md-mermaid[data-mermaid-theme="forest"] {
+  --mermaid-bg: #17201d;
+  --mermaid-border: rgba(174, 213, 129, 0.13);
+  --mermaid-node-bg: rgba(174, 213, 129, 0.1);
+  --mermaid-node-border: rgba(174, 213, 129, 0.34);
+  --mermaid-er-bg: rgba(20, 31, 27, 0.96);
+  --mermaid-state-bg: rgba(52, 211, 153, 0.11);
+  --mermaid-state-border: rgba(52, 211, 153, 0.36);
+  --mermaid-text: #eef8ef;
+  --mermaid-muted: #afc7b7;
+  --mermaid-dim: #8faa9b;
+  --mermaid-line: rgba(143, 170, 155, 0.72);
+  --mermaid-type: #a7f3d0;
+}
+.md-body .md-mermaid[data-mermaid-theme="contrast"] {
+  --mermaid-bg: #101114;
+  --mermaid-border: rgba(255,255,255,.2);
+  --mermaid-node-bg: rgba(255,255,255,.06);
+  --mermaid-node-border: rgba(255,255,255,.44);
+  --mermaid-er-bg: rgba(16, 17, 20, 0.96);
+  --mermaid-state-bg: rgba(255,255,255,.06);
+  --mermaid-state-border: rgba(255,255,255,.44);
+  --mermaid-text: #ffffff;
+  --mermaid-muted: #d0d5dd;
+  --mermaid-dim: #c8d1dc;
+  --mermaid-line: rgba(255,255,255,.78);
+  --mermaid-type: #fbbf24;
 }

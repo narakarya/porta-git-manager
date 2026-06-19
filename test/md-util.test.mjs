@@ -95,6 +95,13 @@ test("renders mermaid flowcharts with title comments and edge labels", () => {
   assert.match(h, />Yes</);
 });
 
+test("renders mermaid theme comments", () => {
+  const h = render("```mermaid\n%% theme: console\nflowchart TD\n  A[Start] --> B[Done]\n```");
+  assert.match(h, /class="md-mermaid" data-mermaid-theme="console"/);
+  assert.match(h, /width="260" height="192"/);
+  assert.match(h, />Done</);
+});
+
 test("renders mermaid er diagrams", () => {
   const h = render("```mermaid\nerDiagram\n  products ||--o{ product_translations : \"has many\"\n  products {\n    string language\n    text description\n  }\n```");
   assert.match(h, /class="md-mermaid md-mermaid-er"/);

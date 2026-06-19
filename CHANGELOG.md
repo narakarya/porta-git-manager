@@ -4,6 +4,12 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+### Added
+- **Mermaid previews support selectable themes.** Mermaid blocks can now use
+  `%% theme: soft`, `graphite`, `console`, `paper`, `forest`, or `contrast`;
+  rendered diagrams also cap their displayed size so large diagrams do not
+  dominate the preview pane.
+
 ## [0.7.46] — 2026-06-19
 
 ### Changed
