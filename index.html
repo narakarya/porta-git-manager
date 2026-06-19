@@ -3,6 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <title>Git Manager</title>
+  <script>
+    (function () {
+      try {
+        var key = "pgm.theme";
+        var theme = localStorage.getItem(key) || "dark";
+        var allowed = { dark: 1, graphite: 1, midnight: 1, paper: 1, forest: 1, sunset: 1 };
+        if (!allowed[theme]) theme = "dark";
+        document.documentElement.dataset.gmTheme = theme;
+        document.documentElement.style.colorScheme = theme === "paper" ? "light" : "dark";
+      } catch (_) {}
+    })();
+  </script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -107,6 +119,14 @@
           <span class="quick-label">Push</span>
         </button>
       </div>
+      <select id="theme-select" class="input theme-select" title="Theme" aria-label="Theme">
+        <option value="dark">Dark</option>
+        <option value="graphite">Graphite</option>
+        <option value="midnight">Midnight</option>
+        <option value="paper">Paper</option>
+        <option value="forest">Forest</option>
+        <option value="sunset">Sunset</option>
+      </select>
       <button id="refresh-btn" class="icon-btn" title="Refresh (R)">
         <svg viewBox="0 0 16 16" width="13" height="13" fill="none">
           <path d="M13 8a5 5 0 1 1-1.7-3.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>

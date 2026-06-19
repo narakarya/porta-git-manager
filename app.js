@@ -54,6 +54,8 @@
     remotes: [],         // populated by Sync tab
   };
   const gmGitUtil = window.GMGitUtil;
+  const themeKey = "pgm.theme";
+  const themes = new Set(["dark", "graphite", "midnight", "paper", "forest", "sunset"]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -64,6 +66,28 @@
   }
   function sh(cmd, opts) {
     return bridge.shell.run(cmd, opts || {});
+  }
+
+  function normalizeTheme(value) {
+    const theme = String(value || "").trim().toLowerCase();
+    return themes.has(theme) ? theme : "dark";
+  }
+
+  function applyTheme(value, persist) {
+    const theme = normalizeTheme(value);
+    document.documentElement.dataset.gmTheme = theme;
+    document.documentElement.style.colorScheme = theme === "paper" ? "light" : "dark";
+    const select = $("#theme-select");
+    if (select && select.value !== theme) select.value = theme;
+    if (persist !== false) {
+      try { window.localStorage.setItem(themeKey, theme); } catch (_) {}
+    }
+    return theme;
+  }
+
+  function loadTheme() {
+    try { return normalizeTheme(window.localStorage.getItem(themeKey)); }
+    catch (_) { return "dark"; }
   }
 
   /** Create an element via (tag, props?, ...children). False/null children skipped. */
@@ -4742,10 +4766,16 @@
 
   // ── Init ─────────────────────────────────────────────────────────────────
   async function init() {
+    const currentTheme = applyTheme(loadTheme(), false);
     bridge.ui.setTitle("Git — " + bridge.app.name);
     $("#refresh-btn").addEventListener("click", refresh);
     $("#quick-pull").addEventListener("click", quickPull);
     $("#quick-push").addEventListener("click", quickPush);
+    const themeSelect = $("#theme-select");
+    if (themeSelect) {
+      themeSelect.addEventListener("change", (e) => applyTheme(e.target.value));
+      themeSelect.value = currentTheme;
+    }
     document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => activateTab(t.dataset.tab)));
     bindKeys();
 
