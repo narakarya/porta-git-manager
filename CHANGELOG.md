@@ -4,6 +4,17 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.48] — 2026-06-19
+
+### Changed
+- **Git Manager now includes a softer dark theme.** The theme picker adds `soft-dark`, and the dark palettes now carry clearer syntax colors so code and previews stay readable across themes.
+
+### Added
+- **Mermaid previews now support zoom and fullscreen controls.** Inline diagrams include zoom in/out, reset, and fullscreen actions so dense diagrams can be inspected without leaving the preview.
+
+### Fixed
+- **Theme selection is easier to read and navigate.** The theme picker now has clearer focus and selected states, and text selection contrast is tuned for the active theme.
+
 ## [0.7.47] — 2026-06-19
 
 ### Added

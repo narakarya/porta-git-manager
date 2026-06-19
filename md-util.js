@@ -78,7 +78,14 @@
 
   function mermaidWrap(src, classes, width, height, label, body) {
     const theme = mermaidTheme(src);
-    return '<div class="' + classes + '" data-mermaid-theme="' + theme + '"><svg width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="' + label + '">' + body + "</svg></div>";
+    return '<div class="' + classes + '" data-mermaid-theme="' + theme + '" data-mermaid-scale="1" style="--mermaid-w:' + width + 'px;--mermaid-h:' + height + 'px;--mermaid-scale:1;">'
+      + '<div class="md-mermaid-toolbar">'
+      + '<button class="md-mermaid-control" type="button" data-mermaid-action="zoom-out" title="Zoom out" aria-label="Zoom out">-</button>'
+      + '<button class="md-mermaid-control" type="button" data-mermaid-action="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>'
+      + '<button class="md-mermaid-control" type="button" data-mermaid-action="zoom-reset" title="Reset zoom" aria-label="Reset zoom">100%</button>'
+      + '<button class="md-mermaid-control" type="button" data-mermaid-action="fullscreen" title="Fullscreen" aria-label="Fullscreen">[]</button>'
+      + '</div>'
+      + '<div class="md-mermaid-viewport"><svg width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="' + label + '">' + body + "</svg></div></div>";
   }
 
   function stripMermaidQuotes(s) {

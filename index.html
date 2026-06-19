@@ -8,7 +8,7 @@
       try {
         var key = "pgm.theme";
         var theme = localStorage.getItem(key) || "dark";
-        var allowed = { dark: 1, graphite: 1, midnight: 1, paper: 1, forest: 1, sunset: 1 };
+        var allowed = { dark: 1, "soft-dark": 1, graphite: 1, midnight: 1, paper: 1, forest: 1, sunset: 1 };
         if (!allowed[theme]) theme = "dark";
         document.documentElement.dataset.gmTheme = theme;
         document.documentElement.style.colorScheme = theme === "paper" ? "light" : "dark";
@@ -121,6 +121,7 @@
       </div>
       <select id="theme-select" class="input theme-select" title="Theme" aria-label="Theme">
         <option value="dark">Dark</option>
+        <option value="soft-dark">Soft Dark</option>
         <option value="graphite">Graphite</option>
         <option value="midnight">Midnight</option>
         <option value="paper">Paper</option>

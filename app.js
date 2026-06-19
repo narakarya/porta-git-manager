@@ -55,7 +55,7 @@
   };
   const gmGitUtil = window.GMGitUtil;
   const themeKey = "pgm.theme";
-  const themes = new Set(["dark", "graphite", "midnight", "paper", "forest", "sunset"]);
+  const themes = new Set(["dark", "soft-dark", "graphite", "midnight", "paper", "forest", "sunset"]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -88,6 +88,34 @@
   function loadTheme() {
     try { return normalizeTheme(window.localStorage.getItem(themeKey)); }
     catch (_) { return "dark"; }
+  }
+
+  function mermaidControlKeydown(e) {
+    if (e.key !== "Escape") return;
+    const fullscreen = document.querySelector(".md-mermaid.is-fullscreen");
+    if (!fullscreen) return;
+    fullscreen.classList.remove("is-fullscreen");
+  }
+
+  function mermaidControlClick(e) {
+    const btn = e.target && e.target.closest ? e.target.closest(".md-mermaid-control") : null;
+    if (!btn) return;
+    const mermaid = btn.closest(".md-mermaid");
+    if (!mermaid) return;
+    const action = btn.dataset.mermaidAction;
+    let scale = Number.parseFloat(mermaid.dataset.mermaidScale || "1");
+    if (!Number.isFinite(scale) || scale <= 0) scale = 1;
+    if (action === "zoom-in") scale = Math.min(2.5, Math.round((scale + 0.2) * 10) / 10);
+    else if (action === "zoom-out") scale = Math.max(0.6, Math.round((scale - 0.2) * 10) / 10);
+    else if (action === "zoom-reset") scale = 1;
+    else if (action === "fullscreen") {
+      const active = document.querySelector(".md-mermaid.is-fullscreen");
+      if (active && active !== mermaid) active.classList.remove("is-fullscreen");
+      mermaid.classList.toggle("is-fullscreen");
+      return;
+    } else return;
+    mermaid.dataset.mermaidScale = String(scale);
+    mermaid.style.setProperty("--mermaid-scale", String(scale));
   }
 
   /** Create an element via (tag, props?, ...children). False/null children skipped. */
@@ -4776,6 +4804,8 @@
       themeSelect.addEventListener("change", (e) => applyTheme(e.target.value));
       themeSelect.value = currentTheme;
     }
+    document.addEventListener("click", mermaidControlClick);
+    window.addEventListener("keydown", mermaidControlKeydown);
     document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => activateTab(t.dataset.tab)));
     bindKeys();
 
