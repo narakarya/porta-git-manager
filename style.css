@@ -1714,21 +1714,21 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .pr-body.is-empty { font-style: italic; color: var(--text-dim); }
 
 /* Rendered Markdown (PR descriptions). Scoped to .md-body so it can't leak. */
-.md-body { color: var(--text); white-space: normal; }
-.md-body .md-p { margin: 0 0 10px; }
-.md-body .md-h { color: var(--text); font-weight: 600; line-height: 1.3; margin: 16px 0 8px; }
-.md-body .md-h1 { font-size: 17px; border-bottom: 1px solid var(--border); padding-bottom: 5px; }
-.md-body .md-h2 { font-size: 15px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
-.md-body .md-h3 { font-size: 13px; }
-.md-body .md-h4, .md-body .md-h5, .md-body .md-h6 { font-size: 12px; color: var(--text-mute); }
+.md-body { color: #e7e7eb; white-space: normal; }
+.md-body .md-p { margin: 0 0 13px; }
+.md-body .md-h { color: #f4f4f5; font-weight: 650; line-height: 1.28; margin: 20px 0 10px; }
+.md-body .md-h1 { font-size: 22px; border-bottom: 1px solid var(--border-hi); padding-bottom: 7px; }
+.md-body .md-h2 { font-size: 18px; border-bottom: 1px solid var(--border); padding-bottom: 5px; }
+.md-body .md-h3 { font-size: 15.5px; color: #dcecff; }
+.md-body .md-h4, .md-body .md-h5, .md-body .md-h6 { font-size: 14px; color: #c4c4cc; }
 .md-body :first-child { margin-top: 0; }
-.md-body a { color: var(--blue); text-decoration: none; }
+.md-body a { color: #7dd3fc; text-decoration: none; }
 .md-body a:hover { text-decoration: underline; }
 .md-body strong { color: var(--text); font-weight: 600; }
-.md-body code { font-family: var(--mono); font-size: 11px; background: var(--bg-card);
-  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 5px; }
-.md-body .md-pre { position: relative; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 10px 12px; overflow-x: auto; margin: 0 0 10px; }
+.md-body code { font-family: var(--mono); font-size: 12.5px; background: rgba(255,255,255,.055);
+  border: 1px solid var(--border-hi); border-radius: var(--radius-sm); padding: 1px 5px; color: #f4f4f5; }
+.md-body .md-pre { position: relative; background: #09090b; border: 1px solid var(--border-hi); border-radius: var(--radius);
+  padding: 12px 14px; overflow-x: auto; margin: 0 0 13px; }
 .md-body .md-pre-lang { padding-top: 26px; }
 .md-body .md-pre-lang::before {
   content: attr(data-lang);
@@ -1740,18 +1740,18 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   text-transform: uppercase;
   letter-spacing: 0;
 }
-.md-body .md-pre code { background: none; border: none; padding: 0; font-size: 11.5px; line-height: 1.5; color: var(--text); }
-.md-body .md-quote { border-left: 3px solid var(--border-hi); margin: 0 0 10px; padding: 2px 0 2px 12px; color: var(--text-mute); }
+.md-body .md-pre code { background: none; border: none; padding: 0; font-size: 12.5px; line-height: 1.55; color: #e7e7eb; }
+.md-body .md-quote { border-left: 3px solid rgba(125,211,252,.45); margin: 0 0 13px; padding: 2px 0 2px 12px; color: #b9b9c1; }
 .md-body .md-quote > :last-child { margin-bottom: 0; }
-.md-body .md-list { margin: 0 0 10px; padding-left: 22px; }
+.md-body .md-list { margin: 0 0 13px; padding-left: 24px; }
 .md-body .md-list .md-list { margin-bottom: 0; }
-.md-body .md-list li { margin: 2px 0; }
+.md-body .md-list li { margin: 3px 0; }
 .md-body .md-check { margin-right: 4px; vertical-align: middle; }
-.md-body .md-hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+.md-body .md-hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
 .md-body .md-img { max-width: 100%; border-radius: var(--radius-sm); }
-.md-body .md-table { border-collapse: collapse; margin: 0 0 10px; font-size: 11.5px; display: block; overflow-x: auto; }
-.md-body .md-table th, .md-body .md-table td { border: 1px solid var(--border); padding: 4px 9px; text-align: left; }
-.md-body .md-table th { background: var(--bg-card); font-weight: 600; color: var(--text); }
+.md-body .md-table { border-collapse: collapse; margin: 0 0 13px; font-size: 13px; display: block; overflow-x: auto; }
+.md-body .md-table th, .md-body .md-table td { border: 1px solid var(--border-hi); padding: 6px 10px; text-align: left; }
+.md-body .md-table th { background: rgba(255,255,255,.06); font-weight: 600; color: #f4f4f5; }
 .md-body .md-table del { color: var(--text-dim); }
 
 .pr-create { display: flex; flex-direction: column; gap: 10px; padding: 16px; max-width: 640px; }
@@ -1876,11 +1876,11 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   font-size: 11.5px;
 }
 .status-preview-doc {
-  padding: 14px 16px;
-  max-width: 860px;
+  padding: 18px 22px;
+  max-width: 980px;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-  font-size: 12.5px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.68;
 }
 .status-preview-frame {
   display: block;
@@ -2280,6 +2280,22 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 }
 .md-body .md-mermaid-er-node line {
   stroke: var(--border);
+}
+.md-body .md-mermaid-state-node rect {
+  fill: rgba(52, 211, 153, 0.09);
+  stroke: rgba(52, 211, 153, 0.38);
+}
+.md-body .md-mermaid-start {
+  fill: #e7e7eb;
+  stroke: rgba(255,255,255,.28);
+}
+.md-body .md-mermaid-seq-participant text {
+  fill: #f4f4f5;
+  font: 600 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.md-body .md-mermaid-seq-participant line {
+  stroke: rgba(255,255,255,.18);
+  stroke-dasharray: 4 5;
 }
 .md-body .md-mermaid-entity {
   fill: var(--text);

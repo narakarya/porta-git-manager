@@ -4,6 +4,19 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.46] — 2026-06-19
+
+### Changed
+- **Markdown previews are easier to read.** Status preview documents now use
+  larger type, wider content, and clearer contrast for headings, links, tables,
+  quotes, and code blocks.
+
+### Fixed
+- **More Mermaid diagrams render inline.** Markdown previews now handle Mermaid
+  title comments, labeled flowchart edges, multi-line node labels,
+  `stateDiagram-v2`, and `sequenceDiagram` blocks instead of falling back to raw
+  code for common documentation diagrams.
+
 ## [0.7.45] — 2026-06-19
 
 ### Added

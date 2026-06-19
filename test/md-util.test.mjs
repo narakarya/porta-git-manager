@@ -86,6 +86,15 @@ test("renders basic mermaid flowcharts", () => {
   assert.match(h, />Done</);
 });
 
+test("renders mermaid flowcharts with title comments and edge labels", () => {
+  const h = render("```mermaid\n%% title: Which image is shown?\nflowchart TD\n  A[Store language<br/>NL] -->|Yes| B[Show NL version]\n```");
+  assert.match(h, /class="md-mermaid"/);
+  assert.match(h, /<svg/);
+  assert.match(h, /Store language/);
+  assert.match(h, /Show NL version/);
+  assert.match(h, />Yes</);
+});
+
 test("renders mermaid er diagrams", () => {
   const h = render("```mermaid\nerDiagram\n  products ||--o{ product_translations : \"has many\"\n  products {\n    string language\n    text description\n  }\n```");
   assert.match(h, /class="md-mermaid md-mermaid-er"/);
@@ -93,6 +102,22 @@ test("renders mermaid er diagrams", () => {
   assert.match(h, /product_translations/);
   assert.match(h, /string/);
   assert.match(h, /description/);
+});
+
+test("renders mermaid state diagrams", () => {
+  const h = render("```mermaid\nstateDiagram-v2\n  direction LR\n  [*] --> downloading: inserts row\n  downloading --> uploaded: Waffle.store ok\n```");
+  assert.match(h, /class="md-mermaid md-mermaid-state"/);
+  assert.match(h, /downloading/);
+  assert.match(h, /uploaded/);
+  assert.match(h, /inserts row/);
+});
+
+test("renders mermaid sequence diagrams", () => {
+  const h = render("```mermaid\nsequenceDiagram\n  participant N as Nexus\n  participant I as Interblade\n  N->>I: POST /v1/batches\n  I-->>N: completed\n```");
+  assert.match(h, /class="md-mermaid md-mermaid-sequence"/);
+  assert.match(h, /Nexus/);
+  assert.match(h, /Interblade/);
+  assert.match(h, /POST \/v1\/batches/);
 });
 
 test("empty input yields empty string", () => {
