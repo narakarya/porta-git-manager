@@ -4,6 +4,8 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.47] — 2026-06-19
+
 ### Added
 - **Git Manager now supports multiple app themes.** The webview can switch
   between `dark`, `graphite`, `midnight`, `paper`, `forest`, and `sunset`,
