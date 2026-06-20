@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.50] — 2026-06-20
+
+### Fixed
+- **History diff stats now color additions and deletions clearly.** Commit detail summaries show `+` counts in green and `-` counts in red, matching the rest of the diff UI.
+
 ## [0.7.49] — 2026-06-19
 
 ### Fixed

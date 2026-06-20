@@ -2201,6 +2201,8 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 }
 .commit-stat-strip .stat-files { color: var(--text); font-weight: 500; }
 .commit-stat-strip .stat-sep { color: var(--text-dim); }
+.commit-stat-strip .stat-add { color: var(--emerald); font-weight: 600; }
+.commit-stat-strip .stat-del { color: var(--red); font-weight: 600; }
 .commit-stat-strip .stat-bar {
   display: inline-flex;
   width: 200px;
