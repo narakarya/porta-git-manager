@@ -89,7 +89,12 @@
       if (lang === "html" && (m = /^[\w:-]+(?=\=)/.exec(rest))) { push(m[0], "type"); i += m[0].length; continue; }
       if ((lang === "yaml" || lang === "toml" || lang === "ini") && (m = /^[A-Za-z0-9_.-]+(?=\s*[:=])/.exec(rest))) { push(m[0], "type"); i += m[0].length; continue; }
       if (lang === "css" && (m = /^--[-\w]+|^[-a-z]+(?=\s*:)/.exec(rest))) { push(m[0], "type"); i += m[0].length; continue; }
-      if ((lang === "ruby" || lang === "elixir") && (m = /^:[A-Za-z_]\w*[!?=]?/.exec(rest))) { push(m[0], "number"); i += m[0].length; continue; }
+      if (lang === "elixir" && (m = /^[A-Z]\w*(?:\.[A-Z]\w*)*/.exec(rest))) { push(m[0], "type"); i += m[0].length; continue; }
+      if (lang === "elixir" && (m = /^:[A-Za-z_]\w*[!?=]?/.exec(rest))) { push(m[0], "atom"); i += m[0].length; continue; }
+      if (lang === "elixir" && (m = /^[A-Za-z_]\w*[!?=]?(?=\s*:)/.exec(rest))) { push(m[0], "atom"); i += m[0].length; continue; }
+      if (lang === "elixir" && (m = /^&(?:\d+|[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?\/\d+)/.exec(rest))) { push(m[0], "number"); i += m[0].length; continue; }
+      if (lang === "elixir" && (m = /^[a-z_]\w*[!?=]?(?=\s*\()/i.exec(rest))) { push(m[0], "function"); i += m[0].length; continue; }
+      if (lang === "ruby" && (m = /^:[A-Za-z_]\w*[!?=]?/.exec(rest))) { push(m[0], "number"); i += m[0].length; continue; }
       if (kw && (m = new RegExp("^(?:" + kw.source + ")").exec(rest)) && m[0]) { push(m[0], "keyword"); i += m[0].length; continue; }
       if ((m = /^[A-Za-z_]\w*/.exec(rest))) { push(m[0], null); i += m[0].length; continue; }
       if ((m = /^\s+/.exec(rest))) { push(m[0], null); i += m[0].length; continue; }

@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.53] — 2026-06-20
+
+### Fixed
+- **Elixir code previews now have clearer syntax color.** Module aliases, function calls, atoms, keyword-list keys, captures, and comments get distinct highlighting for better readability.
+
 ## [0.7.52] — 2026-06-20
 
 ### Fixed

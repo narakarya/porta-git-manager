@@ -42,3 +42,15 @@ test("tokenize handles broader language families", () => {
   assert.equal(tokenize("name: app", "yaml").find(t => t.t === "name")?.type, "type");
   assert.equal(tokenize("<div class=\"x\">", "html").find(t => t.t === "class")?.type, "type");
 });
+
+test("tokenize highlights Elixir-specific identifiers", () => {
+  const toks = tokenize("Nexus.ProductAIImage |> Repo.all() |> Enum.group_by(& &1.source_product_image_id, order_by: [:position])", "elixir");
+  assert.equal(toks.find(t => t.t === "Nexus.ProductAIImage")?.type, "type");
+  assert.equal(toks.find(t => t.t === "Repo")?.type, "type");
+  assert.equal(toks.find(t => t.t === "all")?.type, "function");
+  assert.equal(toks.find(t => t.t === "Enum")?.type, "type");
+  assert.equal(toks.find(t => t.t === "group_by")?.type, "function");
+  assert.equal(toks.find(t => t.t === "order_by")?.type, "atom");
+  assert.equal(toks.find(t => t.t === ":position")?.type, "atom");
+  assert.equal(toks.find(t => t.t === "&1")?.type, "number");
+});
