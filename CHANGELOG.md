@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.57] — 2026-06-20
+
+### Fixed
+- **Sticky diff file headers no longer show an oversized blank strip.** The header background still seals the edge, but the overlay no longer extends far above the visible header content.
+
 ## [0.7.56] — 2026-06-20
 
 ### Fixed
