@@ -3209,6 +3209,7 @@
     let logCache = new Map(); // filter string -> commits
     let detailCache = new Map(); // short sha -> rendered detail data
     let branchCache = null;
+    let historyDetailContextLines = 8;
     const selectedCommits = new Set();
     let actionRunning = false;
 
@@ -3284,19 +3285,20 @@
     }
 
     async function loadCommitDetail(commit) {
-      if (detailCache.has(commit.sha)) return detailCache.get(commit.sha);
+      const cacheKey = commit.sha + "\x1f" + historyDetailContextLines;
+      if (detailCache.has(cacheKey)) return detailCache.get(cacheKey);
       // Parallel fetches — body, absolute timestamp, and the patch itself.
       const [bodyRes, absRes, showRes] = await Promise.all([
         git("show -s --format=%b " + quote(commit.sha)),
         git("show -s --format=%ai " + quote(commit.sha)),
-        git("show --no-color --format= -p -U8 " + quote(commit.sha)),
+        git("show --no-color --format= -p -U" + historyDetailContextLines + " " + quote(commit.sha)),
       ]);
       const detail = {
         bodyText: (bodyRes.code === 0 ? bodyRes.stdout : "").trimEnd(),
         absDate: (absRes.code === 0 ? absRes.stdout : "").trim(),
         files: gmParseDiffDoc(showRes.stdout),
       };
-      detailCache.set(commit.sha, detail);
+      detailCache.set(cacheKey, detail);
       return detail;
     }
 
@@ -3510,6 +3512,19 @@
       }, { add: 0, del: 0 });
       const total = totals.add + totals.del || 1;
       const addPct = (totals.add / total) * 100;
+      const contextSelect = h("select", {
+        class: "diff-modal-opt-select commit-context-select",
+        title: "Unchanged lines around each change",
+        value: historyDetailContextLines >= 99999 ? "all" : String(historyDetailContextLines),
+        onChange: (e) => {
+          historyDetailContextLines = e.target.value === "all" ? 99999 : Number(e.target.value);
+          renderDetail(detailNode, commit);
+        },
+      },
+        h("option", { value: "8", selected: historyDetailContextLines === 8 }, "±8 ctx"),
+        h("option", { value: "20", selected: historyDetailContextLines === 20 }, "±20 ctx"),
+        h("option", { value: "all", selected: historyDetailContextLines >= 99999 }, "Full file"),
+      );
       detailNode.append(h("div", { class: "commit-stat-strip" },
         h("span", { class: "stat-files" }, files.length + " file" + (files.length === 1 ? "" : "s") + " changed"),
         h("span", { class: "stat-sep" }, "·"),
@@ -3520,6 +3535,8 @@
           h("span", { class: "stat-bar-add", style: { width: addPct + "%" } }),
           h("span", { class: "stat-bar-del", style: { width: (100 - addPct) + "%" } }),
         ),
+        h("span", { class: "commit-stat-spacer" }),
+        contextSelect,
       ));
 
       const diffWrap = h("div", { class: "commit-diff" });
@@ -3528,8 +3545,9 @@
     }
 
     async function renderDetail(detailNode, commit) {
-      if (detailCache.has(commit.sha)) {
-        paintCommitDetail(detailNode, commit, detailCache.get(commit.sha));
+      const cacheKey = commit.sha + "\x1f" + historyDetailContextLines;
+      if (detailCache.has(cacheKey)) {
+        paintCommitDetail(detailNode, commit, detailCache.get(cacheKey));
         return;
       }
       detailNode.innerHTML = "";

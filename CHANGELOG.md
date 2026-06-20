@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.60] — 2026-06-20
+
+### Added
+- **History commit diffs can show more unchanged code.** The commit detail toolbar now offers `±8`, `±20`, and `Full file` context modes, with cached diff details kept separate per mode.
+
 ## [0.7.59] — 2026-06-20
 
 ### Changed
