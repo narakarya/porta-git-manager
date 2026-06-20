@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.54] — 2026-06-20
+
+### Fixed
+- **History reset actions now validate and build reset commands consistently.** Reset soft, mixed, and hard actions use the shared Git command builder so invalid modes are rejected before Git runs.
+
 ## [0.7.53] — 2026-06-20
 
 ### Fixed

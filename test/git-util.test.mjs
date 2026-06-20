@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import pkg from "../git-util.js";
 
-const { FIELD_SEP, RECORD_SEP, buildRebaseTodo, parseHistoryLog, parseRebaseLog } = pkg;
+const { FIELD_SEP, RECORD_SEP, buildRebaseTodo, buildResetCommand, parseHistoryLog, parseRebaseLog } = pkg;
 
 test("parseRebaseLog preserves full multiline commit messages", () => {
   const raw = [
@@ -47,4 +47,15 @@ test("buildRebaseTodo uses message files for multiline reword messages", () => {
   assert.deepEqual(result.messageFiles, [
     { path: "/tmp/reword-0.txt", message: "New subject\n\nNew body" },
   ]);
+});
+
+test("buildResetCommand builds reset commands for supported modes", () => {
+  assert.equal(buildResetCommand("abc123", "soft"), "reset --soft 'abc123'");
+  assert.equal(buildResetCommand("abc123", "mixed"), "reset --mixed 'abc123'");
+  assert.equal(buildResetCommand("abc123", "hard"), "reset --hard 'abc123'");
+});
+
+test("buildResetCommand rejects unsupported modes and empty refs", () => {
+  assert.throws(() => buildResetCommand("abc123", "mixex"), /Unsupported reset mode/);
+  assert.throws(() => buildResetCommand("", "soft"), /Reset target is required/);
 });

@@ -3432,7 +3432,14 @@
         okLabel: "Reset",
       });
       if (!ok) return;
-      await runHistoryAction("reset --" + mode, "reset --" + mode + " " + quote(commitRef(commit)), "Reset complete");
+      let cmd;
+      try {
+        cmd = gmGitUtil.buildResetCommand(commitRef(commit), mode);
+      } catch (err) {
+        ui.toast((err && err.message) || "Invalid reset request", "error", 5000);
+        return;
+      }
+      await runHistoryAction("reset --" + mode, cmd, "Reset complete");
     }
 
     function paintCommitDetail(detailNode, commit, detail) {

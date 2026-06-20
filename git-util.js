@@ -104,9 +104,20 @@
     return { todo: lines.join("\n"), messageFiles };
   }
 
+  function buildResetCommand(commitRef, mode) {
+    const normalizedMode = String(mode || "").trim();
+    if (!["soft", "mixed", "hard"].includes(normalizedMode)) {
+      throw new Error("Unsupported reset mode: " + normalizedMode);
+    }
+    const ref = String(commitRef || "").trim();
+    if (!ref) throw new Error("Reset target is required.");
+    return "reset --" + normalizedMode + " " + shellQuote(ref);
+  }
+
   return {
     FIELD_SEP,
     RECORD_SEP,
+    buildResetCommand,
     buildRebaseTodo,
     parseHistoryLog,
     parseRebaseLog,
