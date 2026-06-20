@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.58] — 2026-06-20
+
+### Fixed
+- **Sticky diff headers now sit at the top of their scroll area without leaked hunk text.** Diff scroll containers no longer reserve top padding above sticky file headers; the commit card keeps the visual spacing instead.
+
 ## [0.7.57] — 2026-06-20
 
 ### Fixed
