@@ -3439,7 +3439,14 @@
         ui.toast((err && err.message) || "Invalid reset request", "error", 5000);
         return;
       }
-      await runHistoryAction("reset --" + mode, cmd, "Reset complete");
+      const before = await git("rev-parse --short HEAD");
+      await runHistoryAction(
+        "reset --" + mode,
+        cmd,
+        before.code === 0 && before.stdout.trim()
+          ? "Reset complete: " + before.stdout.trim() + " -> " + commit.sha
+          : "Reset complete",
+      );
     }
 
     function paintCommitDetail(detailNode, commit, detail) {
@@ -4765,7 +4772,7 @@
     const btn = $("#refresh-btn");
     if (btn) btn.classList.add("spinning");
     try {
-      for (const tab of [branchesTab, syncTab, historyTab, stashTab, tagsTab, prTab]) {
+      for (const tab of [statusTab, branchesTab, syncTab, historyTab, stashTab, tagsTab, prTab]) {
         if (tab && tab.invalidate) tab.invalidate();
       }
       await readHead();

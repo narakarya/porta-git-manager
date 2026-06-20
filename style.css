@@ -2059,7 +2059,7 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .diff-file-head {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 6;
   background: var(--bg-pane);
   border-bottom: 1px solid var(--border);
   padding: 6px 12px;
@@ -2074,9 +2074,10 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .diff-file-head::before {
   content: "";
   position: absolute;
-  inset: -1px 0 0;
+  inset: -18px 0 -1px;
   z-index: -1;
   background: var(--bg-pane);
+  border-bottom: 1px solid var(--border);
 }
 .diff-file-head .chev {
   font-size: 13px;

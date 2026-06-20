@@ -1,5 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import pkg from "../git-util.js";
 
 const { FIELD_SEP, RECORD_SEP, buildRebaseTodo, buildResetCommand, parseHistoryLog, parseRebaseLog } = pkg;
@@ -58,4 +62,44 @@ test("buildResetCommand builds reset commands for supported modes", () => {
 test("buildResetCommand rejects unsupported modes and empty refs", () => {
   assert.throws(() => buildResetCommand("abc123", "mixex"), /Unsupported reset mode/);
   assert.throws(() => buildResetCommand("", "soft"), /Reset target is required/);
+});
+
+test("buildResetCommand reset modes behave correctly against a real repo", () => {
+  const repo = mkdtempSync(join(tmpdir(), "pgm-reset-"));
+  const git = (...args) => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+  const runBuiltReset = (target, mode) => {
+    execFileSync("sh", ["-lc", "git " + buildResetCommand(target, mode)], { cwd: repo, encoding: "utf8" });
+  };
+  const commit = (message, content) => {
+    writeFileSync(join(repo, "file.txt"), content);
+    git("add", "file.txt");
+    git("commit", "-m", message);
+    return git("rev-parse", "HEAD");
+  };
+
+  git("init");
+  git("config", "user.email", "test@example.com");
+  git("config", "user.name", "Test User");
+  git("config", "commit.gpgsign", "false");
+  const base = commit("base", "base\n");
+  commit("second", "second\n");
+  const tip = commit("third", "third\n");
+
+  runBuiltReset(base, "soft");
+  assert.equal(git("rev-parse", "HEAD"), base);
+  assert.equal(git("diff", "--cached", "--name-only"), "file.txt");
+  assert.equal(git("diff", "--name-only"), "");
+
+  runBuiltReset(tip, "hard");
+  runBuiltReset(base, "mixed");
+  assert.equal(git("rev-parse", "HEAD"), base);
+  assert.equal(git("diff", "--cached", "--name-only"), "");
+  assert.equal(git("diff", "--name-only"), "file.txt");
+
+  runBuiltReset(tip, "hard");
+  runBuiltReset(base, "hard");
+  assert.equal(git("rev-parse", "HEAD"), base);
+  assert.equal(git("diff", "--cached", "--name-only"), "");
+  assert.equal(git("diff", "--name-only"), "");
+  assert.equal(git("show", "--format=", "--name-only", "HEAD"), "file.txt");
 });

@@ -4,6 +4,12 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.56] — 2026-06-20
+
+### Fixed
+- **History reset refreshes Status state after it runs.** Soft and mixed resets now invalidate the Status cache during global refresh, and reset success toasts include the HEAD movement.
+- **Sticky diff file headers now cover scrolled content behind them.** File headers use a higher layer and extended pane background so diff lines no longer bleed through above the header.
+
 ## [0.7.55] — 2026-06-20
 
 ### Fixed
