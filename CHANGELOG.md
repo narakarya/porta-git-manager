@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.52] — 2026-06-20
+
+### Fixed
+- **Mermaid flowcharts now keep vertical edges centered through uneven node widths.** Node fills are also more solid so connector lines no longer show through labels and cards.
+
 ## [0.7.51] — 2026-06-20
 
 ### Fixed

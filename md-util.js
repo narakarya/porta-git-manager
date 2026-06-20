@@ -210,15 +210,20 @@
       return [id, { lines, w, h }];
     }));
     const gapY = 70;
-    const x = 52;
     let y = 28;
     let maxW = 0;
+    ids.forEach((id) => {
+      const meta = nodeMeta.get(id);
+      y += meta.h + gapY;
+      maxW = Math.max(maxW, meta.w);
+    });
+    const x = 52;
+    y = 28;
     const positions = new Map();
     ids.forEach((id) => {
       const meta = nodeMeta.get(id);
-      positions.set(id, { x, y, w: meta.w, h: meta.h });
+      positions.set(id, { x: x + (maxW - meta.w) / 2, y, w: meta.w, h: meta.h });
       y += meta.h + gapY;
-      maxW = Math.max(maxW, meta.w);
     });
     const width = Math.max(340, x + maxW + 150);
     const height = Math.max(120, y - gapY + 28);
