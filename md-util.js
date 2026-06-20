@@ -108,6 +108,45 @@
       + "</text>";
   }
 
+  function wrapMermaidLabel(text, maxChars) {
+    const chunks = String(text || "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const out = [];
+    const limit = Math.max(8, maxChars || 26);
+    for (const chunk of chunks.length ? chunks : [""]) {
+      const words = chunk.split(/\s+/).filter(Boolean);
+      let line = "";
+      for (const word of words) {
+        if (!line) {
+          line = word;
+        } else if ((line + " " + word).length <= limit) {
+          line += " " + word;
+        } else {
+          out.push(line);
+          line = word;
+        }
+        while (line.length > limit + 6) {
+          out.push(line.slice(0, limit));
+          line = line.slice(limit);
+        }
+      }
+      if (line || !words.length) out.push(line);
+    }
+    return out.length ? out : [""];
+  }
+
+  function svgTextLines(lines, x, firstY, lineHeight, opts) {
+    const attr = opts || "";
+    return '<text x="' + x + '" y="' + firstY + '"' + attr + ">"
+      + (lines.length ? lines : [""]).map((line, index) =>
+        '<tspan x="' + x + '" dy="' + (index ? lineHeight : 0) + '">' + escapeHtml(line) + "</tspan>"
+      ).join("")
+      + "</text>";
+  }
+
   function estimateTextWidth(s, min, max) {
     const longest = Math.max(...String(s || "").replace(/<br\s*\/?>/gi, "\n").split(/\n+/).map((line) => line.trim().length), 1);
     return Math.max(min, Math.min(max, 28 + longest * 7));
@@ -163,29 +202,45 @@
     if (!nodes.size) return '<pre class="md-pre"><code>' + escapeHtml(src) + "</code></pre>";
 
     const ids = Array.from(nodes.keys());
-    const width = 260;
-    const nodeW = 160;
-    const nodeH = 38;
-    const gapY = 38;
-    const positions = new Map(ids.map((id, index) => [id, { x: 50, y: 24 + index * (nodeH + gapY) }]));
-    const height = 40 + ids.length * (nodeH + gapY);
+    const nodeMeta = new Map(ids.map((id) => {
+      const lines = wrapMermaidLabel(nodes.get(id), 28);
+      const longest = Math.max(...lines.map((line) => line.length), 1);
+      const w = Math.max(180, Math.min(290, 30 + longest * 7));
+      const h = Math.max(46, 24 + lines.length * 15);
+      return [id, { lines, w, h }];
+    }));
+    const gapY = 70;
+    const x = 52;
+    let y = 28;
+    let maxW = 0;
+    const positions = new Map();
+    ids.forEach((id) => {
+      const meta = nodeMeta.get(id);
+      positions.set(id, { x, y, w: meta.w, h: meta.h });
+      y += meta.h + gapY;
+      maxW = Math.max(maxW, meta.w);
+    });
+    const width = Math.max(340, x + maxW + 150);
+    const height = Math.max(120, y - gapY + 28);
     const marker = '<defs><marker id="md-mermaid-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>';
     const edgeSvg = edges.map(([from, to, label]) => {
       const a = positions.get(from);
       const b = positions.get(to);
       if (!a || !b) return "";
-      const x1 = a.x + nodeW / 2;
-      const y1 = a.y + nodeH;
-      const x2 = b.x + nodeW / 2;
+      const x1 = a.x + a.w / 2;
+      const y1 = a.y + a.h;
+      const x2 = b.x + b.w / 2;
       const y2 = b.y;
       const my = (y1 + y2) / 2;
-      return '<path class="md-mermaid-edge" d="M' + x1 + " " + y1 + " C" + x1 + " " + (y1 + 24) + " " + x2 + " " + (y2 - 24) + " " + x2 + " " + y2 + '" fill="none" stroke-width="1.5" marker-end="url(#md-mermaid-arrow)" />'
-        + (label ? '<text class="md-mermaid-rel-label" x="' + (x1 + 12) + '" y="' + my + '">' + escapeHtml(label) + "</text>" : "");
+      return '<path class="md-mermaid-edge" d="M' + x1 + " " + y1 + " C" + x1 + " " + (y1 + 34) + " " + x2 + " " + (y2 - 34) + " " + x2 + " " + y2 + '" fill="none" stroke-width="1.5" marker-end="url(#md-mermaid-arrow)" />'
+        + (label ? '<text class="md-mermaid-rel-label" x="' + (Math.max(x1, x2) + 16) + '" y="' + (my + 4) + '">' + escapeHtml(label) + "</text>" : "");
     }).join("");
     const nodeSvg = ids.map((id) => {
       const p = positions.get(id);
-      return '<g class="md-mermaid-node" transform="translate(' + p.x + " " + p.y + ')"><rect width="' + nodeW + '" height="' + nodeH + '" rx="6"/>'
-        + svgText(nodes.get(id), nodeW / 2, 24, ' text-anchor="middle"')
+      const meta = nodeMeta.get(id);
+      const firstY = (p.h - (meta.lines.length - 1) * 15) / 2 + 4;
+      return '<g class="md-mermaid-node" transform="translate(' + p.x + " " + p.y + ')"><rect width="' + p.w + '" height="' + p.h + '" rx="6"/>'
+        + svgTextLines(meta.lines, p.w / 2, firstY, 15, ' text-anchor="middle"')
         + "<title>" + escapeHtml(id) + "</title></g>";
     }).join("");
     return mermaidWrap(src, "md-mermaid", width, height, "Mermaid diagram", marker + edgeSvg + nodeSvg);
@@ -216,17 +271,24 @@
     if (!states.size) return renderCodeBlock(src, "mermaid");
 
     const ids = Array.from(states.keys());
-    const width = 640;
+    const minWidth = 640;
     const nodeH = 42;
-    const gapX = 34;
+    const centerY = 110;
     const positions = new Map();
     let x = 24;
-    ids.forEach((id) => {
+    ids.forEach((id, index) => {
       const nodeW = id === "start" ? 24 : estimateTextWidth(states.get(id), 130, 190);
-      positions.set(id, { x, y: 38, w: nodeW, h: id === "start" ? 24 : nodeH });
-      x += nodeW + gapX;
+      const h = id === "start" ? 24 : nodeH;
+      positions.set(id, { x, y: centerY - h / 2, w: nodeW, h });
+      const next = ids[index + 1];
+      const labels = next ? edges
+        .filter((edge) => edge.from === id && edge.to === next && edge.label)
+        .flatMap((edge) => wrapMermaidLabel(edge.label, 26))
+        : [];
+      const labelW = labels.length ? Math.max(...labels.map((label) => estimateTextWidth(label, 0, 190))) : 0;
+      x += nodeW + Math.max(88, labelW + 28);
     });
-    const actualWidth = Math.max(width, x + 8);
+    const actualWidth = Math.max(minWidth, x + 8);
     const marker = '<defs><marker id="md-mermaid-state-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>';
     const edgeSvg = edges.map((edge) => {
       const a = positions.get(edge.from);
@@ -237,8 +299,10 @@
       const x2 = b.x;
       const y2 = b.y + b.h / 2;
       const mx = (x1 + x2) / 2;
+      const labelLines = edge.label ? wrapMermaidLabel(edge.label, 26) : [];
+      const labelY = centerY - 62 + (labelLines.length === 1 ? 8 : 0);
       return '<path class="md-mermaid-edge" d="M' + x1 + " " + y1 + " C" + mx + " " + y1 + " " + mx + " " + y2 + " " + x2 + " " + y2 + '" fill="none" stroke-width="1.5" marker-end="url(#md-mermaid-state-arrow)" />'
-        + (edge.label ? '<text class="md-mermaid-rel-label" x="' + mx + '" y="' + (Math.min(y1, y2) - 9) + '" text-anchor="middle">' + escapeHtml(edge.label) + "</text>" : "");
+        + (edge.label ? svgTextLines(labelLines, mx, labelY, 15, ' class="md-mermaid-rel-label" text-anchor="middle"') : "");
     }).join("");
     const nodeSvg = ids.map((id) => {
       const p = positions.get(id);
@@ -246,7 +310,7 @@
       return '<g class="md-mermaid-node md-mermaid-state-node" transform="translate(' + p.x + " " + p.y + ')"><rect width="' + p.w + '" height="' + p.h + '" rx="8"/>'
         + svgText(states.get(id), p.w / 2, 26, ' text-anchor="middle"') + "</g>";
     }).join("");
-    return mermaidWrap(src, "md-mermaid md-mermaid-state", actualWidth, 112, "Mermaid state diagram", marker + edgeSvg + nodeSvg);
+    return mermaidWrap(src, "md-mermaid md-mermaid-state", actualWidth, 180, "Mermaid state diagram", marker + edgeSvg + nodeSvg);
   }
 
   function renderMermaidSequence(lines, src) {

@@ -328,6 +328,26 @@ code, kbd, .mono { font-family: var(--mono); }
 .input:focus { outline: none; border-color: rgba(96, 165, 250, 0.4); }
 textarea.input { resize: vertical; min-height: 56px; font-family: var(--mono); }
 
+select.input {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 26px;
+  background-color: var(--bg-input);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none'><path d='M2 3.5L5 6.5L8 3.5' stroke='%23a1a1aa' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px;
+}
+select.input:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+select.input option {
+  background: var(--bg-pane);
+  color: var(--text);
+}
+
 ::selection {
   background: rgba(96, 165, 250, .24);
   color: var(--text);
@@ -343,18 +363,11 @@ html[data-gm-theme="paper"] ::selection {
   min-width: 112px;
   max-width: 136px;
   flex: 0 0 auto;
-  appearance: auto;
-  padding-right: 8px;
-  background-image: none;
 }
 .theme-select:focus,
 .theme-select:focus-visible {
   border-color: rgba(96, 165, 250, .42);
   box-shadow: 0 0 0 2px rgba(96, 165, 250, .10);
-}
-.theme-select option {
-  background: var(--bg-pane);
-  color: var(--text);
 }
 .theme-select option:checked,
 .theme-select option:focus,

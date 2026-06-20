@@ -4,6 +4,12 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.51] — 2026-06-20
+
+### Fixed
+- **Mermaid diagrams now lay out long labels more cleanly.** Flowchart nodes wrap long text, and state diagrams reserve more space for transition labels so preview diagrams avoid overlapping text.
+- **Theme dropdown styling matches Porta's select controls.** Select inputs now use a custom chevron instead of the native macOS dropdown chrome.
+
 ## [0.7.50] — 2026-06-20
 
 ### Fixed

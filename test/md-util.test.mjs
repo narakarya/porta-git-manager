@@ -98,8 +98,16 @@ test("renders mermaid flowcharts with title comments and edge labels", () => {
 test("renders mermaid theme comments", () => {
   const h = render("```mermaid\n%% theme: console\nflowchart TD\n  A[Start] --> B[Done]\n```");
   assert.match(h, /class="md-mermaid" data-mermaid-theme="console"/);
-  assert.match(h, /width="260" height="192"/);
+  assert.match(h, /<svg width="\d+" height="\d+"/);
   assert.match(h, />Done</);
+});
+
+test("wraps long mermaid flowchart labels inside nodes", () => {
+  const h = render("```mermaid\nflowchart TD\n  A[GENERIC version<br/>no text — works for every language] --> B[LOCALIZED versions<br/>one per language: NL, DE, FR, ...]\n```");
+  assert.match(h, /GENERIC version/);
+  assert.match(h, /works for every/);
+  assert.match(h, /language/);
+  assert.match(h, /height="\d{3,}"/);
 });
 
 test("renders mermaid er diagrams", () => {
@@ -117,6 +125,7 @@ test("renders mermaid state diagrams", () => {
   assert.match(h, /downloading/);
   assert.match(h, /uploaded/);
   assert.match(h, /inserts row/);
+  assert.match(h, /height="180"/);
 });
 
 test("renders mermaid sequence diagrams", () => {
