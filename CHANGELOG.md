@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.55] — 2026-06-20
+
+### Fixed
+- **Diff file headers now stay visually solid while scrolling.** Sticky file headers get a pane-backed layer and clearer stat colors so additions and deletions remain readable in long diffs.
+
 ## [0.7.54] — 2026-06-20
 
 ### Fixed

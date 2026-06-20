@@ -2068,6 +2068,15 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   gap: 8px;
   cursor: pointer;
   user-select: none;
+  isolation: isolate;
+  box-shadow: 0 -1px 0 var(--bg-pane), 0 1px 0 var(--border);
+}
+.diff-file-head::before {
+  content: "";
+  position: absolute;
+  inset: -1px 0 0;
+  z-index: -1;
+  background: var(--bg-pane);
 }
 .diff-file-head .chev {
   font-size: 13px;
@@ -2083,6 +2092,8 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .diff-file-head { padding: 8px 14px; }
 .diff-file-head .path { font-family: var(--mono); font-size: 11.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .diff-file-head .stats { margin-left: auto; display: flex; gap: 6px; font-size: 10.5px; }
+.stat-add { color: var(--emerald); }
+.stat-del { color: var(--red); }
 .diff-file-block.is-collapsed .diff-file-body { display: none; }
 
 .diff-tree { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
