@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.59] — 2026-06-20
+
+### Changed
+- **Read-only diffs now show more surrounding code and hide hunk coordinates.** History, branch compare, and diff viewer contexts default to eight lines, while noisy `@@ ... @@` hunk headers are hidden outside editable Status hunks.
+
 ## [0.7.58] — 2026-06-20
 
 ### Fixed

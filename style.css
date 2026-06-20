@@ -700,6 +700,10 @@ html[data-gm-theme="paper"] ::selection {
   transition: opacity 0.12s;
 }
 .hunk:hover .hunk-header .hunk-actions { opacity: 1; }
+.commit-diff .hunk-header,
+.diff-modal-content .hunk-header {
+  display: none;
+}
 .hunk-action {
   background: transparent;
   border: 0;

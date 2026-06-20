@@ -391,7 +391,7 @@
         let currentList = files;
         const hasRefetch = typeof refetch === "function";
         let ignoreWs = false;
-        let contextLines = 3;
+        let contextLines = 8;
         let currentFiles = files;
         const renderInto = (list) => {
           currentList = list;
@@ -505,7 +505,7 @@
           onChange: (e) => { contextLines = e.target.value === "all" ? 99999 : Number(e.target.value); reload(); },
         },
           h("option", { value: "3" }, "±3 ctx"),
-          h("option", { value: "6" }, "±6 ctx"),
+          h("option", { value: "8", selected: true }, "±8 ctx"),
           h("option", { value: "all" }, "All ctx"),
         );
 
@@ -2543,7 +2543,7 @@
       paintViewing();
       const ref = b.name;
 
-      const fetchFiles = async ({ ignoreWhitespace, context } = { ignoreWhitespace: false, context: 3 }) => {
+      const fetchFiles = async ({ ignoreWhitespace, context } = { ignoreWhitespace: false, context: 8 }) => {
         const flags = (ignoreWhitespace ? " -w" : "") + " -U" + context;
         const cmd = "diff " + quote(base + "..." + ref) + " --no-color" + flags;
         const r = await git(cmd);
@@ -3219,7 +3219,7 @@
       // — call showLoading purely to occupy the slot, then immediately swap
       // in via diffModal (no visible skeleton time since files are ready).
       if (!ui.showLoading("Opening viewer…")) return;
-      const fetchFiles = async ({ ignoreWhitespace, context } = { ignoreWhitespace: false, context: 3 }) => {
+      const fetchFiles = async ({ ignoreWhitespace, context } = { ignoreWhitespace: false, context: 8 }) => {
         const flags = (ignoreWhitespace ? " -w" : "") + " -U" + context;
         const r = await git("show --no-color --format= -p" + flags + " " + quote(commit.sha));
         if (r.code !== 0) throw new Error(r.stderr || "git show failed");
@@ -3289,7 +3289,7 @@
       const [bodyRes, absRes, showRes] = await Promise.all([
         git("show -s --format=%b " + quote(commit.sha)),
         git("show -s --format=%ai " + quote(commit.sha)),
-        git("show --no-color --format= -p " + quote(commit.sha)),
+        git("show --no-color --format= -p -U8 " + quote(commit.sha)),
       ]);
       const detail = {
         bodyText: (bodyRes.code === 0 ? bodyRes.stdout : "").trimEnd(),
