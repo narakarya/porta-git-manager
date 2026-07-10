@@ -807,19 +807,18 @@ git commit -m "feat: PR tab in place via reconcile; drop stale Status caret hack
 
 ---
 
-### Task 11: Guard third-party/imperative subtrees (mermaid, highlight)
+### Task 11: Guard third-party/imperative subtrees (mermaid, highlight) — NOT NEEDED
 
-**Files:**
-- Modify: `app.js` diff/preview render paths — `renderDiffInto` (app.js:1501), `renderFilePreview` (app.js:1573), mermaid wrappers (`.md-mermaid`, referenced app.js:100-118)
+**Status: SKIPPED (unnecessary given the architecture actually built).**
 
-**Interfaces:**
-- Consumes: `data-static` support in `h()`/reconcile (Tasks 1-2).
-- Produces: generated SVG/highlight subtrees survive reconcile untouched; they replace cleanly only when their content changes.
+The `data-static` guard support still exists in `h()`/reconcile (Tasks 1-2) as a safety valve, but no call site needs it. Rationale, verified by trace of the final code:
 
-- [ ] **Step 1: Mark generated subtrees static with content-derived keys**
+- All heavy generated content — syntax-highlighted diffs (`renderDiffInto` / `renderUnifiedHunkBody` / `renderSplitHunkBody` via `window.GMHi`), markdown/mermaid (`window.GMMd.render` into `.md-body`, app.js:1597/4584), and file previews (`renderFilePreview`) — is emitted **imperatively** into the diff/detail containers, **not** as part of any tab render's `next` tree.
+- Those containers — Status `diffNode`, History `detail`, PR `detailEl` — are all **reused-live** (the same live node object is placed into `next`), so reconcile hits the `live === fresh` identity short-circuit in `morph` (dom-util.js) and **never descends into their subtrees**. Mermaid zoom state (`data-mermaid-scale`) and highlighted DOM are therefore never touched.
+- The standalone diff modal (`ui.diffModal`) renders outside any tab pane and is not reconciled.
+- The only highlight-ish content inside a morphed tree is `window.GMText.highlightMatches` (simple `<mark>`/text spans) in keyed list rows (History/Branches/Stash/Tags/PR); these morph cleanly and hold no imperative state worth preserving.
 
-- Mermaid wrapper: where `.md-mermaid` is built (in `md-util.js`/`app.js` md render), add `static: true` and `key: "mermaid:" + <stable-id-or-content-hash>` so reconcile syncs its attributes (e.g. `data-mermaid-scale`) but never rebuilds the injected SVG, and a genuinely new diagram gets a new key → clean replace.
-- Highlighted diff hunk bodies: on the hunk body wrapper (`renderUnifiedHunkBody`/`renderSplitHunkBody`, app.js:1686/1721), add `key: "hunk:" + filePath + ":" + hunkIndex` and `static: true` if the highlighted content is imperatively injected and must not be morphed line-by-line.
+Because reconcile provably never visits the mermaid/highlighted-diff subtrees, adding `static`/keys there would be dead markup. The driven check below folds into Task 12's regression pass (zoom a mermaid in a preview, then trigger a Status reconcile — the SVG/zoom must survive, which it does by identity short-circuit, not by `data-static`).
 
 - [ ] **Step 2: Run tests**
 
