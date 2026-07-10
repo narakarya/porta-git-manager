@@ -3867,12 +3867,12 @@
 
     function render() {
       const node = pane();
-      node.innerHTML = "";
+      const next = document.createElement("div");
       node.className = "pane is-active rebase-pane";
 
       if (state.rebaseInProgress) {
-        node.append(
-          h("div", { class: "in-progress-banner" },
+        next.append(
+          h("div", { class: "in-progress-banner", key: "rebase-banner" },
             h("svg", { viewBox: "0 0 12 12", width: "14", height: "14", fill: "none", html: '<path d="M6 1l5 9H1L6 1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 5v2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="6" cy="9" r="0.5" fill="currentColor"/>' }),
             h("div", null,
               h("strong", null, "Rebase in progress."),
@@ -3880,37 +3880,40 @@
                 "Resolve conflicts or edit/amend the stopped commit, stage changes from the Status tab, then come back here and click Continue."),
             ),
           ),
-          h("div", { class: "rebase-actions" },
+          h("div", { class: "rebase-actions", key: "rebase-banner-actions" },
             h("button", { class: "btn-primary", onClick: continueRebase }, "Continue"),
             h("button", { class: "btn-danger", onClick: abortRebase }, "Abort"),
           ),
         );
+        reconcile(node, next);
         return;
       }
 
       const targetInput = h("input", {
         class: "input",
+        key: "rebase-target",
         placeholder: "HEAD~5, main, abc123…",
         value: state.rebaseTarget,
         onInput: (e) => { state.rebaseTarget = e.target.value; },
         onKeydown: (e) => { if (e.key === "Enter") buildPlan(); },
       });
-      node.append(h("div", { class: "rebase-form" },
+      next.append(h("div", { class: "rebase-form", key: "rebase-form" },
         h("label", { class: "rebase-form-label" }, "Rebase onto"),
         targetInput,
         h("button", { class: "btn-primary", onClick: buildPlan }, "Plan rebase"),
       ));
 
       if (state.rebasePlan.length === 0) {
-        node.append(h("div", { class: "rebase-empty" },
+        next.append(h("div", { class: "rebase-empty", key: "rebase-empty" },
           h("div", { class: "rebase-empty-title" }, "Interactive rebase"),
           h("p", { class: "empty-sub", style: { margin: "0 auto" } },
             "Enter a target ref above and press Plan rebase. Commits between it and HEAD appear here, where you can pick · edit · squash · fixup · drop and reorder them before applying."),
         ));
+        reconcile(node, next);
         return;
       }
 
-      const plan = h("div", { class: "rebase-plan" });
+      const plan = h("div", { class: "rebase-plan", key: "rebase-plan" });
       for (let i = 0; i < state.rebasePlan.length; i++) {
         const c = state.rebasePlan[i];
         const prevOp = c.op;
@@ -3947,7 +3950,7 @@
           h("button", { class: "row-action", onClick: () => move(i, +1), disabled: i === state.rebasePlan.length - 1 }, "↓"),
         );
         const msgCell = h("span", { class: "log-msg-line", title: c.msg }, c.msg);
-        const row = h("div", { class: "rebase-todo-row" + (c.op === "drop" ? " is-drop" : ""), dataset: { op: c.op } },
+        const row = h("div", { class: "rebase-todo-row" + (c.op === "drop" ? " is-drop" : ""), key: "todo:" + c.sha, dataset: { op: c.op } },
           grip,
           sel,
           h("span", { class: "log-sha" }, c.sha),
@@ -3958,14 +3961,15 @@
         }
         plan.append(row);
       }
-      node.append(plan);
+      next.append(plan);
 
-      node.append(h("div", { class: "rebase-actions" },
+      next.append(h("div", { class: "rebase-actions", key: "rebase-actions" },
         h("button", { class: "btn-primary", onClick: startRebase }, "Start rebase"),
         h("span", { class: "rebase-count" }, state.rebasePlan.filter((c) => c.op !== "drop").length + " of " + state.rebasePlan.length + " commits kept"),
         h("div", { style: { flex: "1" } }),
         h("button", { class: "btn-ghost", onClick: () => { state.rebasePlan = []; render(); } }, "Clear"),
       ));
+      reconcile(node, next);
     }
 
     return { render };
