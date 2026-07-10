@@ -1133,7 +1133,6 @@
     const pane = () => document.querySelector('.pane[data-pane="status"]');
     let lastDiffPath = null;
     let lastDiffSource = null;  // "staged" | "unstaged" | "untracked"
-    let caretPos = null;        // caret offset to restore after a filter re-render
     const selectedStatus = new Set();
     let lastSelectedStatusKey = null;
 
@@ -2144,7 +2143,7 @@
         key: "status-filter",
         placeholder: "Filter files…",
         value: state.fileFilter,
-        onInput: (e) => { caretPos = e.target.selectionStart; state.fileFilter = e.target.value; render(); },
+        onInput: (e) => { state.fileFilter = e.target.value; render(); },
       });
       const selectedCount = selectedStatus.size;
       const toolbar = h("div", { class: "status-toolbar" },
@@ -2167,14 +2166,12 @@
         ),
       );
       next.append(toolbar);
-      // Restore the caret in the file filter after this render recreated it.
-      if (caretPos != null) { filterInput.focus(); try { filterInput.setSelectionRange(caretPos, caretPos); } catch (_) {} caretPos = null; }
 
       // ─── Split (file list ↔ diff) ────────────────────────────────────
       // Reuse the LIVE diff node (if one exists) so selectFile()'s post-render
       // mutation and every row's onPick closure hit the real DOM node, not a
       // freshly-built one that reconcile will discard as detached.
-      let diffNode = pane().querySelector(".status-diff");
+      let diffNode = node.querySelector(".status-diff");
       if (!diffNode) {
         diffNode = h("div", { class: "status-diff", key: "diff" });
         diffNode.innerHTML = '<div class="status-diff-empty">Select a file to preview the diff.</div>';
