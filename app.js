@@ -126,9 +126,13 @@
         const v = props[k];
         if (k === "class") el.className = v;
         else if (k === "html") el.innerHTML = v;
+        else if (k === "key") { if (v != null) el.dataset.key = String(v); }
+        else if (k === "static") { if (v) el.setAttribute("data-static", "1"); }
         else if (k === "dataset") for (const d in v) el.dataset[d] = v[d];
         else if (k.startsWith("on") && typeof v === "function") {
-          el.addEventListener(k.slice(2).toLowerCase(), v);
+          const type = k.slice(2).toLowerCase();
+          (el.__on || (el.__on = {}))[type] = v;
+          el.addEventListener(type, v);
         } else if (k === "style" && typeof v === "object") {
           for (const s in v) el.style[s] = v[s];
         } else if (k in el) {
