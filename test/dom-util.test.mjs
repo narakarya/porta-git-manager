@@ -155,3 +155,14 @@ test("keyed insert at non-terminal position preserves later existing keys", () =
   assert.equal(live.children[1]._id, map.a); // existing a survived
   assert.equal(live.children[2]._id, map.b); // existing b survived
 });
+
+test("identity match: same node object in fresh list is a no-op, subtree preserved", () => {
+  const shared = el("div", { "data-key": "diff" }, el("pre", {}, "big diff content"));
+  const preId = shared.children[0]._id;
+  const live = el("root", {}, el("div", { "data-key": "bar" }), shared);
+  // fresh reuses the SAME `shared` object (as render does with a live container)
+  const fresh = el("root", {}, el("div", { "data-key": "bar" }), shared);
+  reconcile(live, fresh);
+  assert.equal(live.children[1], shared);              // same object still in place
+  assert.equal(live.children[1].children[0]._id, preId); // subtree untouched
+});

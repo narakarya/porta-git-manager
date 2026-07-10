@@ -37,6 +37,7 @@
 
   // Morph a single element pair (same-ish node). Assumes tags already matched.
   function morph(live, fresh) {
+    if (live === fresh) return live;   // identity match — reused live container
     syncAttrs(live, fresh);
     swapHandlers(live, fresh);
     if (fresh.hasAttribute && fresh.hasAttribute("data-static")) return live;

@@ -18,6 +18,7 @@
     document.body.innerText = "Missing portaBridge. Reload the extension.";
     return;
   }
+  const { reconcile } = window.GMDom;
 
   // ── Global state ─────────────────────────────────────────────────────────
   const state = {
@@ -2111,12 +2112,13 @@
       // signal the working tree may have changed, so drop the cached status/diffs.
       if (opts && opts.force) invalidateStatus();
       const node = pane();
-      node.innerHTML = "";
+      const next = document.createElement("div");
       node.className = "pane is-active status-pane";
 
       const status = await loadStatus();
       if (status.err) {
-        node.append(h("div", { class: "empty" }, h("p", { class: "empty-title" }, "Could not read status"), h("p", { class: "empty-sub" }, status.err)));
+        next.append(h("div", { class: "empty" }, h("p", { class: "empty-title" }, "Could not read status"), h("p", { class: "empty-sub" }, status.err)));
+        reconcile(node, next);
         return;
       }
       state.statusFiles = { staged: status.staged, unstaged: status.unstaged };
@@ -2139,6 +2141,7 @@
       // ─── Toolbar ──────────────────────────────────────────────────────
       const filterInput = h("input", {
         class: "status-filter",
+        key: "status-filter",
         placeholder: "Filter files…",
         value: state.fileFilter,
         onInput: (e) => { caretPos = e.target.selectionStart; state.fileFilter = e.target.value; render(); },
@@ -2163,18 +2166,24 @@
           }, "Split"),
         ),
       );
-      node.append(toolbar);
+      next.append(toolbar);
       // Restore the caret in the file filter after this render recreated it.
       if (caretPos != null) { filterInput.focus(); try { filterInput.setSelectionRange(caretPos, caretPos); } catch (_) {} caretPos = null; }
 
       // ─── Split (file list ↔ diff) ────────────────────────────────────
-      const diffNode = h("div", { class: "status-diff" });
-      diffNode.innerHTML = '<div class="status-diff-empty">Select a file to preview the diff.</div>';
+      // Reuse the LIVE diff node (if one exists) so selectFile()'s post-render
+      // mutation and every row's onPick closure hit the real DOM node, not a
+      // freshly-built one that reconcile will discard as detached.
+      let diffNode = pane().querySelector(".status-diff");
+      if (!diffNode) {
+        diffNode = h("div", { class: "status-diff", key: "diff" });
+        diffNode.innerHTML = '<div class="status-diff-empty">Select a file to preview the diff.</div>';
+      }
 
       const list = h("div", { class: "status-list" });
 
       function appendSection(label, items, sourceFor, actions) {
-        list.append(h("div", { class: "file-section-title" },
+        list.append(h("div", { class: "file-section-title", key: "sec:" + label },
           h("span", null, label),
           h("span", { class: "count" }, String(items.length)),
           h("span", { class: "section-actions" }, ...(actions || [])),
@@ -2225,7 +2234,7 @@
       ]);
 
       const split = h("div", { class: "status-split" }, list, diffNode);
-      node.append(split);
+      next.append(split);
 
       // Re-apply selection diff after re-render so picking a stage/unstage
       // doesn't blank the diff pane each time.
@@ -2235,11 +2244,12 @@
         const pool = src === "staged" ? status.staged : displayUnstagedAll;
         const file = pool.find((f) => f.path === path);
         if (file) selectFile(file, src, diffNode);
-        else state.selectedFile = null;
+        else { state.selectedFile = null; selectFile(null, src, diffNode); }
       }
 
       // ─── Commit area ──────────────────────────────────────────────────
       const ta = h("textarea", {
+        key: "commit-ta",
         placeholder: state.commitAmend ? "Amend message (blank = keep HEAD's)" : "Commit message…",
         value: state.commitMsg,
         onInput: (e) => { state.commitMsg = e.target.value; },
@@ -2261,8 +2271,8 @@
       );
       if (!state.commitAmend && staged.length === 0) submitBtn.disabled = true;
 
-      node.append(
-        h("div", { class: "commit-area" },
+      next.append(
+        h("div", { class: "commit-area", key: "commit" },
           ta,
           h("div", { class: "commit-options" },
             h("label", null, amendChk, "Amend HEAD"),
@@ -2271,6 +2281,7 @@
           ),
         ),
       );
+      reconcile(node, next);
     }
 
     return { render };
