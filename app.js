@@ -3148,10 +3148,10 @@
     async function render(opts) {
       const force = !!(opts && opts.force);
       const node = pane();
-      node.innerHTML = "";
+      const next = document.createElement("div");
       node.className = "pane is-active sync-pane";
 
-      const summary = h("div", { class: "sync-summary" },
+      const summary = h("div", { class: "sync-summary", key: "sync-summary" },
         h("div", { class: "label" }, "Branch · Tracking"),
         h("div", { class: "value" },
           state.branch || "(none)",
@@ -3163,7 +3163,7 @@
           ),
         ),
       );
-      node.append(summary);
+      next.append(summary);
 
       // ─── Remotes section ──────────────────────────────────────────────
       if (!remotesLoaded || force) {
@@ -3171,7 +3171,7 @@
         remotesLoaded = true;
       }
       const remotes = state.remotes || [];
-      const remotesBox = h("div", { class: "sync-summary" },
+      const remotesBox = h("div", { class: "sync-summary", key: "remotes" },
         h("div", { class: "label" }, "Remotes"),
       );
       if (remotes.length === 0) {
@@ -3179,7 +3179,7 @@
       } else {
         const list = h("div", { class: "remote-list" });
         for (const r of remotes) {
-          list.append(h("div", { class: "remote-row" },
+          list.append(h("div", { class: "remote-row", key: "remote:" + r.name },
             h("span", { class: "remote-name" }, r.name),
             h("span", { class: "remote-url", title: r.fetchUrl }, r.fetchUrl),
             h("span", { class: "remote-actions" },
@@ -3196,6 +3196,7 @@
         class: "input", style: { maxWidth: "140px" },
         placeholder: "Name (e.g. origin)",
         value: newRemoteName,
+        key: "remote-name",
         onInput: (e) => { newRemoteName = e.target.value; },
         onKeydown: (e) => { if (e.key === "Enter") addRemote(); },
       });
@@ -3203,6 +3204,7 @@
         class: "input",
         placeholder: "URL (git@…:owner/repo.git)",
         value: newRemoteUrl,
+        key: "remote-url",
         onInput: (e) => { newRemoteUrl = e.target.value; },
         onKeydown: (e) => { if (e.key === "Enter") addRemote(); },
       });
@@ -3215,9 +3217,9 @@
           disabled: !newRemoteName.trim() || !newRemoteUrl.trim(),
         }, "Add"),
       ));
-      node.append(remotesBox);
+      next.append(remotesBox);
 
-      const grid = h("div", { class: "sync-grid" },
+      const grid = h("div", { class: "sync-grid", key: "sync-grid" },
         actionCard({ name: "Fetch",            desc: "Update remote refs without merging.",            onClick: () => fetch(false) }),
         actionCard({ name: "Fetch + prune",    desc: "Also remove refs to branches gone from remote.", onClick: () => fetch(true) }),
         actionCard({ name: "Pull",             desc: "Fetch + merge upstream into HEAD.",              onClick: () => pull(false) }),
@@ -3226,7 +3228,8 @@
         actionCard({ name: "Push",             desc: state.upstream ? "Push HEAD to upstream." : "Push and set upstream to origin/" + state.branch + ".", onClick: () => push(false) }),
         actionCard({ name: "Push --force-with-lease", danger: true, desc: "Overwrite remote only if it hasn't moved since fetch.", onClick: () => push(true) }),
       );
-      node.append(grid);
+      next.append(grid);
+      reconcile(node, next);
     }
 
     return { render, invalidate: () => { remotesLoaded = false; } };
