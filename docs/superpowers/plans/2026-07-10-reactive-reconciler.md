@@ -238,8 +238,8 @@ Create `dom-util.js`. The DOM-standard API it uses (`childNodes`, `getAttribute`
   }
 
   function reconcileChildren(live, fresh) {
-    const liveKids = live.childNodes;
-    const freshKids = fresh.childNodes;
+    const liveKids = live.childNodes;              // LIVE — trailing-removal relies on it
+    const freshKids = Array.from(fresh.childNodes); // SNAPSHOT — mounting detaches from fresh
 
     // Index live's keyed children so we can pull them forward on reorder.
     const keyed = new Map();
@@ -406,20 +406,79 @@ Convert it to build a detached frame and morph:
 
 Positional (unkeyed) matching already preserves top-level containers and their scroll; keys make list rows and reorderable items reuse cleanly.
 
+### CRITICAL gotcha — imperatively-managed containers must be the LIVE node
+
+reconcile **reuses the old (live) DOM node** and discards the freshly-built one.
+So any node your render builds with `h()`, stashes in a variable, and then
+**mutates or passes by reference after the append** — e.g. Status's `diffNode`
+(populated by `selectFile` after render, and captured by every row's `onPick`
+closure), or PR/History's `listEl`/`detailEl` — becomes a **detached orphan** the
+moment reconcile runs: the variable points at the fresh node, but the DOM keeps the
+live one. Writing to it updates nothing; closures capturing it fire against nothing.
+
+**Rule:** for such a container, reuse the LIVE node in the fresh tree instead of
+building a new one:
+
+```js
+const diffNode = pane().querySelector(".status-diff")
+  || h("div", { class: "status-diff", key: "diff" }); // first render only
+```
+
+Now the same object is in both `live` and `next`, so reconcile treats it as an
+identity match (no-op — see the `live === fresh` short-circuit added to reconcile in
+Task 3), its scroll/content survive, and every captured reference and closure points
+at the real DOM node. Only initialize its placeholder content when you actually
+created it (don't clobber preserved content on reuse).
+
+Nodes that are fully rebuilt each render from data (toolbar, list rows, commit area)
+do NOT need this — reconcile morphs them and their handlers correctly. The rule is
+only for containers whose contents are managed imperatively outside the render's
+`h()` tree.
+
 ---
 
 ### Task 3: Convert Status tab to reconcile (hot path)
 
 **Files:**
-- Modify: `app.js:2105-2270` (`statusTab.render`)
+- Modify: `dom-util.js` (add `live === fresh` identity short-circuit) + `test/dom-util.test.mjs`
 - Modify: `app.js` top of IIFE (add `const { reconcile } = window.GMDom;` after `const bridge = window.portaBridge;`, ~app.js:16)
-- Modify: `app.js:2172-2213` (`appendSection`) and row builders to add keys
+- Modify: `app.js:2105-2270` (`statusTab.render`)
 
 **Interfaces:**
 - Consumes: `GMDom.reconcile` (Task 1), keyed `h()` (Task 2).
-- Produces: Status pane updates in place.
+- Produces: Status pane updates in place; `reconcile` gains an identity short-circuit that later tabs also rely on (the reuse-live-container pattern).
 
-- [ ] **Step 1: Expose reconcile in the IIFE**
+**Note — rows are already keyed.** `gmRenderFileTree` already stamps `row.dataset.key` (app.js:964) and `dirRow.dataset.key` (app.js:933) from `opts.keyFor`, and Status passes `keyFor: (f) => \`${sourceFor(f)}:${f.path}\`` (app.js:2189). Do **not** modify `gmRenderFileTree` — reconcile picks these up as `data-key` automatically.
+
+- [ ] **Step 1: Add the `live === fresh` short-circuit to reconcile (RED first)**
+
+Add a failing test to `test/dom-util.test.mjs` proving that placing the SAME live node object into the fresh child list leaves it and its subtree untouched (identity match, no self-morph churn):
+
+```js
+test("identity match: same node object in fresh list is a no-op, subtree preserved", () => {
+  const shared = el("div", { "data-key": "diff" }, el("pre", {}, "big diff content"));
+  const preId = shared.children[0]._id;
+  const live = el("root", {}, el("div", { "data-key": "bar" }), shared);
+  // fresh reuses the SAME `shared` object (as render does with a live container)
+  const fresh = el("root", {}, el("div", { "data-key": "bar" }), shared);
+  reconcile(live, fresh);
+  assert.equal(live.children[1], shared);              // same object still in place
+  assert.equal(live.children[1].children[0]._id, preId); // subtree untouched
+});
+```
+
+Run: `node --test test/dom-util.test.mjs` — the new test may already pass (self-morph is idempotent) but the short-circuit makes it cheap and guarantees no transient handler churn. Then add the guard as the first line of `morph`:
+
+```js
+  function morph(live, fresh) {
+    if (live === fresh) return live;   // identity match — reused live container
+    syncAttrs(live, fresh);
+    ...
+```
+
+And in `reconcileChildren`, when `match === fchild` skip the redundant `insertBefore` (it's already the same node at some position) — the existing `if (liveKids[cursor] !== match) live.insertBefore(...)` already handles positioning; leave it. Run the test again — green.
+
+- [ ] **Step 2: Expose reconcile in the IIFE**
 
 After `app.js:16` (`const bridge = window.portaBridge;`) add:
 
@@ -427,32 +486,68 @@ After `app.js:16` (`const bridge = window.portaBridge;`) add:
   const { reconcile } = window.GMDom;
 ```
 
-- [ ] **Step 2: Apply the Conversion Recipe to `render` (app.js:2105)**
+- [ ] **Step 3: Reuse the LIVE diff node (the critical gotcha)**
 
-- Line 2110 `node.innerHTML = "";` → `const next = document.createElement("div");`
-- The early-return error branch (app.js:2114-2117): change `node.append(...)` → `next.append(...)` and insert `reconcile(node, next);` immediately before its `return;`.
-- Every other `node.append(` in this function (the toolbar at ~2162, the split at ~2224, the commit area at ~2260) → `next.append(`.
+At app.js:2167-2168, replace:
+
+```js
+      const diffNode = h("div", { class: "status-diff" });
+      diffNode.innerHTML = '<div class="status-diff-empty">Select a file to preview the diff.</div>';
+```
+
+with (reuse the live node so `selectFile` and every row `onPick` closure hit the real DOM, and diff scroll/content survive):
+
+```js
+      let diffNode = pane().querySelector(".status-diff");
+      if (!diffNode) {
+        diffNode = h("div", { class: "status-diff", key: "diff" });
+        diffNode.innerHTML = '<div class="status-diff-empty">Select a file to preview the diff.</div>';
+      }
+```
+
+- [ ] **Step 4: Apply the Conversion Recipe to `render` (app.js:2105)**
+
+- app.js:2110 `node.innerHTML = "";` → `const next = document.createElement("div");`
+- The early-return error branch (app.js:2114-2117): change its `node.append(...)` → `next.append(...)` and insert `reconcile(node, next);` immediately before its `return;`.
+- Every other `node.append(` in this function (toolbar ~2162, split ~2224, commit area ~2260) → `next.append(`.
 - At the end of the function (after the commit-area append, ~2269) add `reconcile(node, next);`.
 
-- [ ] **Step 3: Add keys to sections and rows**
+- [ ] **Step 5: Add keys to the remaining containers**
 
-- In `appendSection` (app.js:2172), key the section wrapper. Change the section title container and give the whole section a stable key by wrapping items — simplest: pass a `sectionKey` and set it on the file-section-title and on the tree container. Concretely, add `key: "sec:" + label` to the `h("div", { class: "file-section-title", ... })` at app.js:2173.
-- Rows already have a stable key string at app.js:2185 (`keyFor: (f) => \`${sourceFor(f)}:${f.path}\``). Ensure `gmRenderFileTree` stamps it as `data-key`. In `gmRenderFileTree`'s row creation (file-tree render path in app.js; the `renderRow`/row `h(...)`), add `key: keyFor(f)` to the row element props. Locate the row `h("div"/"button", {...})` inside `gmRenderFileTree` and add `key: opts.keyFor ? opts.keyFor(f) : undefined`.
-- Key the diff container: `const diffNode = h("div", { class: "status-diff", key: "diff" });` (app.js:2167).
-- Key the commit area: add `key: "commit"` to the `h("div", { class: "commit-area" }, ...)` at app.js:2260, and `key: "commit-ta"` to the textarea at app.js:2238.
+- Section title: add `key: "sec:" + label` to the `h("div", { class: "file-section-title", ... })` at app.js:2173.
+- Filter input: add `key: "status-filter"` to the `h("input", { class: "status-filter", ... })` at app.js:2136.
+- Commit area: add `key: "commit"` to the `h("div", { class: "commit-area" }, ...)` at app.js:2260; add `key: "commit-ta"` to the textarea at app.js:2238.
+- (Diff container already keyed via Step 3.)
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 6: Fix stale diff when the selected file leaves (reuse side-effect)**
+
+Because the diff node now persists, the selection re-apply block (app.js:2228-2235) must **actively clear** the diff when the selected file is gone (e.g. you staged the file you were viewing), otherwise stale content lingers. Change:
+
+```js
+        if (file) selectFile(file, src, diffNode);
+        else state.selectedFile = null;
+```
+
+to:
+
+```js
+        if (file) selectFile(file, src, diffNode);
+        else { state.selectedFile = null; selectFile(null, src, diffNode); }
+```
+
+`selectFile(null, ...)` already resets the node to the placeholder (app.js:1826-1828).
+
+- [ ] **Step 7: Run tests**
 
 Run: `npm test`
-Expected: PASS (no unit test covers Status, but suite stays green — confirms no syntax break).
+Expected: PASS — `dom-util` suite (now including the identity test) green, whole suite green. Confirms no syntax break in app.js.
 
-- [ ] **Step 5: Driven verification (the real check)**
+- [ ] **Step 8: Driven verification (the real check)**
 
 Reload the extension. In a repo with a long list of changes:
-1. Scroll the Changes list halfway down.
-2. Click a file to show its diff; scroll the diff.
-3. Stage that file (or hit the row's stage action).
-Expected: the list scroll position and the diff scroll position **do not jump**; only the staged row moves to the Staged section; no full-pane flash. Type in the commit textarea, then stage another file — caret stays put and text is retained.
+1. Scroll the Changes list halfway down; click a file; scroll its diff.
+2. Stage that file via its row action.
+Expected: the file-list scroll does **not** jump; no full-pane flash; the staged row moves to Staged; the diff resets to placeholder (the file you were viewing is now staged) without flashing the rest of the pane. Then: select a file, scroll its diff, and stage a *different* file — the viewed diff and its scroll stay put. Type in the commit textarea, stage another file — caret and text retained.
 
 - [ ] **Step 6: Commit**
 
