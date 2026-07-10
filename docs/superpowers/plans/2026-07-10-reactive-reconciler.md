@@ -764,15 +764,16 @@ git commit -m "feat: Tags tab updates in place via reconcile"
 
 ---
 
-### Task 10: Convert PR tab + remove stale caret hack
+### Task 10: Convert PR tab
 
 **Files:**
 - Modify: `app.js:4619-4688` (`prTab.render`, `renderDetail` at app.js:4464)
-- Modify: `app.js:2140,2164` (remove the now-redundant `caretPos` save/restore in Status filter)
 
 **Interfaces:**
 - Consumes: `reconcile`, keyed `h()`.
-- Produces: PR pane in place; cleanup of the pre-reconcile caret workaround.
+- Produces: PR pane in place.
+
+> Note: the Status filter caret hack removal and its `key: "status-filter"` were already done in Task 3 (pulled forward when a review found the caret-restore code targeting a detached node). Old Step 3 here is intentionally dropped.
 
 - [ ] **Step 1: Apply the Conversion Recipe to `prTab.render`**
 
@@ -785,24 +786,16 @@ git commit -m "feat: Tags tab updates in place via reconcile"
 - PR rows keyed by number: `key: "pr:" + pr.number`.
 - List container `key: "pr-list"`, detail container `key: "pr-detail"`.
 
-- [ ] **Step 3: Remove the redundant caret hack in Status**
-
-Now that the filter `<input>` persists across reconcile, the manual caret save/restore is dead weight. In `statusTab.render`:
-- app.js:2140: change `onInput: (e) => { caretPos = e.target.selectionStart; state.fileFilter = e.target.value; render(); }` → `onInput: (e) => { state.fileFilter = e.target.value; render(); }`
-- app.js:2164: delete the `if (caretPos != null) { ... }` restore line.
-- Remove the now-unused `let caretPos = null;` declaration (app.js:1131).
-- Give the filter input a key so it persists: add `key: "status-filter"` to the `h("input", { class: "status-filter", ... })` at app.js:2136.
-
-- [ ] **Step 4: Run tests**
+- [ ] **Step 3: Run tests**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Driven verification**
+- [ ] **Step 4: Driven verification**
 
-Reload. On PR: scroll the PR list, open a PR (detail morphs), press `r`. Expected: list scroll holds, no flash. Back on Status: type continuously in the filter while results narrow — caret never jumps (now handled by node persistence, not the removed hack).
+Reload. On PR: scroll the PR list, open a PR (detail morphs), press `r`. Expected: list scroll holds, no flash.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add app.js
