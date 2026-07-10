@@ -4177,7 +4177,7 @@
       const toggle = (ref, on) => { if (on) selectedRefs.add(ref); else selectedRefs.delete(ref); paint(); };
 
       if (selectedRefs.size > 0) {
-        nextList.append(h("div", { class: "bulk-bar" },
+        nextList.append(h("div", { class: "bulk-bar", key: "stash-bulk-bar" },
           h("span", { class: "bulk-count" }, selectedRefs.size + " selected"),
           h("div", { style: { flex: "1" } }),
           h("button", { class: "btn-mini", onClick: () => { selectedRefs.clear(); paint(); } }, "Clear"),
@@ -4185,7 +4185,7 @@
         ));
       }
 
-      const list = h("div", { class: "stash-list" });
+      const list = h("div", { class: "stash-list", key: "stash-list" });
       if (stashes.length === 0) {
         list.append(h("div", { class: "empty-files" }, "No stashes"));
       } else if (visible.length === 0) {
