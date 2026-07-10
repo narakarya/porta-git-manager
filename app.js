@@ -2620,26 +2620,32 @@
     async function render(opts) {
       const force = !!(opts && opts.force);
       const node = pane();
-      node.innerHTML = "";
+      const next = document.createElement("div");
       node.className = "pane is-active branches-pane";
       let countSeq = null;
 
       const filterInput = h("input", {
         class: "history-search",
+        key: "branches-filter",
         placeholder: "Filter branches…",
         value: state.branchFilter,
         // Re-paint only the list — rebuilding this input on each keystroke
         // is what made the caret jump to the end.
         onInput: (e) => { state.branchFilter = e.target.value; paint(); },
       });
-      let createButton = null;
       const newInput = h("input", {
         class: "input branch-create-input",
         placeholder: "New branch name…",
         value: newBranchName,
         onInput: (e) => {
           newBranchName = e.target.value;
-          if (createButton) createButton.disabled = !newBranchName.trim();
+          // Query the live button by class instead of closing over a
+          // `createButton` variable: after reconcile, this render() call's
+          // freshly-built button may be discarded in favor of the reused
+          // live one, and a captured reference would become a detached
+          // orphan (mutating it would touch nothing the user can see).
+          const btn = pane() && pane().querySelector(".branch-create-submit");
+          if (btn) btn.disabled = !newBranchName.trim();
         },
         onKeydown: (e) => { if (e.key === "Enter") createBranch(); },
       });
@@ -2672,7 +2678,7 @@
       },
         ...createRefs.map((name) => h("option", { value: name, selected: name === createBaseRef() }, "from " + displayRefName(name))),
       );
-      createButton = h("button", { class: "btn-primary", onClick: createBranch, disabled: !newBranchName.trim() }, "Create");
+      const createButton = h("button", { class: "btn-primary branch-create-submit", onClick: createBranch, disabled: !newBranchName.trim() }, "Create");
       const top = h("div", { class: "branches-top" },
         filterInput,
         compareSelect,
@@ -2681,8 +2687,8 @@
         createBaseSelect,
         createButton,
       );
-      node.append(top);
-      node.append(h("div", { class: "branches-list-wrap" }));
+      next.append(top);
+      next.append(h("div", { class: "branches-list-wrap" }));
 
       if (!loaded || force) {
         countSeq = ++countLoadSeq;
@@ -2705,6 +2711,15 @@
         );
         createBaseSelect.value = state.branchCreateBase || "HEAD";
       }
+      reconcile(node, next);
+      // dom-util's morph sets a reused <select>'s `.value` PROPERTY before
+      // reconcileChildren re-syncs its <option> children (value-before-options
+      // ordering), which can fail to stick against a stale option set.
+      // Re-assign against the live selects as a safety net.
+      const liveCompare = node.querySelector(".branch-compare-select");
+      if (liveCompare) liveCompare.value = state.branchCompareBase || "";
+      const liveCreateBase = node.querySelector(".branch-create-base-select");
+      if (liveCreateBase) liveCreateBase.value = state.branchCreateBase || "HEAD";
       paint();
       if (countSeq) loadUniqueCommitCounts(state.branches.local, state.branches.remote, countSeq);
     }
@@ -2712,7 +2727,7 @@
     function paint() {
       const wrap = pane() && pane().querySelector(".branches-list-wrap");
       if (!wrap) return;
-      wrap.innerHTML = "";
+      const nextList = document.createElement("div");
       const { local, remote } = state.branches || { local: [], remote: [] };
 
       const f = state.branchFilter.toLowerCase();
@@ -2844,6 +2859,7 @@
         // onClick there.
         return h("div", {
           class: "branch-row" + (b.isCurrent ? " is-current" : "") + (selected.has(b.name) ? " is-checked" : "") + (viewingName === b.name ? " is-viewing" : "") + (opts.onActivate ? " is-clickable" : ""),
+          key: "br:" + b.name,
           dataset: { branch: b.name },
           onClick: opts.onActivate ? () => opts.onActivate(b) : undefined,
         },
@@ -2872,16 +2888,18 @@
         { key: "local-only", label: "Local-only", n: local.filter((b) => !b.hasRemote).length },
         { key: "on-remote", label: "On remote", n: local.filter((b) => b.hasRemote).length },
       ];
-      wrap.append(h("div", { class: "branch-facets" },
+      nextList.append(h("div", { class: "branch-facets", key: "branch-facets" },
         ...facetDefs.map((d) => h("button", {
           class: "facet-chip" + (facet === d.key ? " is-active" : ""),
           onClick: () => { facet = d.key; paint(); },
         }, d.label, h("span", { class: "facet-n" }, String(d.n)))),
       ));
 
-      // Bulk-action bar appears only while something is ticked.
+      // Bulk-action bar appears only while something is ticked. Keyed so its
+      // presence toggling doesn't shift the (also keyed) list container's
+      // position and cause it to be mismatched against a stale sibling.
       if (selected.size > 0) {
-        wrap.append(h("div", { class: "bulk-bar" },
+        nextList.append(h("div", { class: "bulk-bar", key: "bulk-bar" },
           h("span", { class: "bulk-count" }, selected.size + " selected"),
           h("div", { style: { flex: "1" } }),
           h("button", { class: "btn-mini", onClick: () => { selected.clear(); paint(); } }, "Clear"),
@@ -2889,10 +2907,10 @@
         ));
       }
 
-      const list = h("div", { class: "branches-list" });
+      const list = h("div", { class: "branches-list", key: "branches-list" });
 
       const filteredLocal = sortBranches(local.filter((b) => match(b) && facetMatch(b)));
-      list.append(h("div", { class: "branch-section-title" }, "Local", h("span", { class: "count" }, String(filteredLocal.length))));
+      list.append(h("div", { class: "branch-section-title", key: "sec:local" }, "Local", h("span", { class: "count" }, String(filteredLocal.length))));
       if (filteredLocal.length === 0) list.append(h("div", { class: "empty-files" }, "No matching local branches"));
       for (const b of filteredLocal) {
         const canViewDiff = !b.isCurrent && !isMainBranch(b);
@@ -2913,7 +2931,7 @@
       // Facets describe local branches only — hide remotes when one is active.
       const filteredRemote = facet === "all" ? sortBranches(remote.filter(match)) : [];
       if (filteredRemote.length > 0) {
-        list.append(h("div", { class: "branch-section-title" }, "Remote", h("span", { class: "count" }, String(filteredRemote.length))));
+        list.append(h("div", { class: "branch-section-title", key: "sec:remote" }, "Remote", h("span", { class: "count" }, String(filteredRemote.length))));
         for (const b of filteredRemote) {
           const canViewDiff = !isMainBranch(b);
           list.append(branchRow(b, {
@@ -2935,7 +2953,8 @@
         list.append(h("div", { class: "empty-files" }, "No branches match “" + state.branchFilter + "”."));
       }
 
-      wrap.append(list);
+      nextList.append(list);
+      reconcile(wrap, nextList);
     }
 
     function paintViewing() {
