@@ -4693,13 +4693,15 @@
       if (!listEl) return;
       const f = filter.toLowerCase();
       const visible = prs.filter((p) => !f || p.title.toLowerCase().includes(f) || String(p.number).includes(f) || (p.headRefName || "").toLowerCase().includes(f));
-      listEl.innerHTML = "";
+      const nextList = document.createElement("div");
       if (visible.length === 0) {
-        listEl.append(h("div", { class: "empty-files" }, prs.length === 0 ? "No open PRs" : "No PRs match"));
+        nextList.append(h("div", { class: "empty-files" }, prs.length === 0 ? "No open PRs" : "No PRs match"));
+        reconcile(listEl, nextList);
         return;
       }
       for (const p of visible) {
         const row = h("button", { class: "pr-row" + (selected === p.number ? " is-selected" : ""),
+          key: "pr:" + p.number,
           onClick: () => { selected = p.number; paintList(); renderDetail(detailEl, p.number); } },
           h("div", { class: "pr-row-top" },
             h("span", { class: "pr-num" }, "#" + p.number),
@@ -4713,36 +4715,38 @@
             h("span", { class: "pr-row-when" }, relTime(p.updatedAt)),
           ),
         );
-        listEl.append(row);
+        nextList.append(row);
       }
+      reconcile(listEl, nextList);
     }
 
     // ── Render ──────────────────────────────────────────────────────────────
     async function render(opts) {
       const force = !!(opts && opts.force);
       const node = pane();
-      node.innerHTML = "";
+      const next = document.createElement("div");
       node.className = "pane is-active pr-pane";
       listEl = detailEl = null;
 
       // Cache a successful auth check; keep retrying while it fails.
       if (ghOk !== true) ghOk = await probeGh();
       if (!ghOk) {
-        node.append(h("div", { class: "empty-files", style: { padding: "24px", lineHeight: "1.6" } },
+        next.append(h("div", { class: "empty-files", key: "pr-auth", style: { padding: "24px", lineHeight: "1.6" } },
           "GitHub CLI not available or not authenticated.",
           h("div", { style: { marginTop: "8px", color: "var(--text-dim)" } }, "Install gh and run `gh auth login`, then refresh."),
         ));
+        reconcile(node, next);
         return;
       }
 
       // Create form (inline) ──────────────────────────────────────────────
       if (creating) {
         const base = await loadBase();
-        const titleInput = h("input", { class: "input", placeholder: "PR title (blank = fill from commits)",
+        const titleInput = h("input", { class: "input", key: "pr-create-title", placeholder: "PR title (blank = fill from commits)",
           value: newTitle, onInput: (e) => { newTitle = e.target.value; } });
-        const bodyInput = h("textarea", { class: "input", rows: 5, placeholder: "Description (optional)",
+        const bodyInput = h("textarea", { class: "input", key: "pr-create-body", rows: 5, placeholder: "Description (optional)",
           style: { resize: "vertical", fontFamily: "inherit" }, value: newBody, onInput: (e) => { newBody = e.target.value; } });
-        node.append(h("div", { class: "pr-create" },
+        next.append(h("div", { class: "pr-create", key: "pr-create" },
           h("div", { class: "pr-create-head" },
             h("span", null, "New PR: ", h("strong", null, state.branch || "?"), " → ", h("strong", null, base)),
           ),
@@ -4752,24 +4756,34 @@
             h("button", { class: "btn-primary", onClick: create }, "Create PR"),
           ),
         ));
+        reconcile(node, next);
         return;
       }
 
       // Top bar — filter re-paints the list client-side (input never rebuilt).
       const filterInput = h("input", {
-        class: "history-search", placeholder: "Filter PRs…", value: filter,
+        class: "history-search", key: "pr-filter", placeholder: "Filter PRs…", value: filter,
         onInput: (e) => { filter = e.target.value; paintList(); },
       });
-      node.append(h("div", { class: "pr-top" },
+      next.append(h("div", { class: "pr-top", key: "pr-top" },
         filterInput,
         h("div", { class: "toolbar-spacer" }),
         h("button", { class: "btn-primary", onClick: () => { creating = true; newTitle = ""; newBody = ""; render(); } }, "New PR"),
       ));
 
-      listEl = h("div", { class: "pr-list" });
-      detailEl = h("div", { class: "pr-detail" });
-      detailEl.innerHTML = '<div class="history-detail-empty">Pick a PR to inspect.</div>';
-      node.append(h("div", { class: "pr-split" }, listEl, detailEl));
+      // Reuse the LIVE list/detail nodes (if any) so paintList()'s row
+      // onClick closures and renderDetail()'s post-render mutation hit the
+      // real DOM, not freshly-built nodes reconcile would discard as
+      // detached (mirrors Status's diffNode / History's detail).
+      listEl = node.querySelector(".pr-list");
+      if (!listEl) listEl = h("div", { class: "pr-list", key: "pr-list" });
+      detailEl = node.querySelector(".pr-detail");
+      if (!detailEl) {
+        detailEl = h("div", { class: "pr-detail", key: "pr-detail" });
+        detailEl.innerHTML = '<div class="history-detail-empty">Pick a PR to inspect.</div>';
+      }
+      next.append(h("div", { class: "pr-split", key: "pr-split" }, listEl, detailEl));
+      reconcile(node, next);
 
       if (!prsLoaded || force) {
         listEl.innerHTML = '<div class="status-diff-empty"><span class="spinner"></span></div>';
