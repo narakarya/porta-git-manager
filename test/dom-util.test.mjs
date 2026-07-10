@@ -16,6 +16,12 @@ class FakeNode {
     this.parentNode = null;
     this.nodeValue = "";
     this._id = ++idSeq;      // stable identity marker for reuse assertions
+    // Form/option JS *properties* (distinct from attrs Map above) — real DOM
+    // elements track these as properties, not attributes, which is exactly
+    // what syncAttrs' property-sync loop (dom-util.js) exercises.
+    this.value = "";
+    this.checked = false;
+    this.selected = false;
   }
   get children() { return this.childNodes.filter((n) => n.nodeType === 1); }
   get firstChild() { return this.childNodes[0] || null; }
@@ -165,4 +171,80 @@ test("identity match: same node object in fresh list is a no-op, subtree preserv
   reconcile(live, fresh);
   assert.equal(live.children[1], shared);              // same object still in place
   assert.equal(live.children[1].children[0]._id, preId); // subtree untouched
+});
+
+test("value/checked PROPERTIES sync on morph (not just attributes)", () => {
+  const liveInput = el("input", { "data-key": "f" });
+  liveInput.value = "old";
+  liveInput.checked = false;
+  const live = el("div", {}, liveInput);
+
+  const freshInput = el("input", { "data-key": "f" });
+  freshInput.value = "new";
+  freshInput.checked = true;
+  const fresh = el("div", {}, freshInput);
+
+  reconcile(live, fresh);
+
+  assert.equal(live.children[0], liveInput);   // reused, not replaced
+  assert.equal(live.children[0].value, "new");
+  assert.equal(live.children[0].checked, true);
+});
+
+test("option .selected property syncs across reconcile (select value change)", () => {
+  const liveSelect = el("select", { "data-key": "sel" },
+    el("option", { "data-key": "a" }),
+    el("option", { "data-key": "b" }),
+    el("option", { "data-key": "c" }),
+  );
+  const [optA, optB, optC] = liveSelect.children;
+  optA.selected = true;
+  const live = el("div", {}, liveSelect);
+
+  const freshSelect = el("select", { "data-key": "sel" },
+    el("option", { "data-key": "a" }),
+    el("option", { "data-key": "b" }),
+    el("option", { "data-key": "c" }),
+  );
+  const [, , fc] = freshSelect.children;
+  fc.selected = true; // fresh side selects "c" instead of "a"
+  const fresh = el("div", {}, freshSelect);
+
+  reconcile(live, fresh);
+
+  assert.equal(live.children[0], liveSelect); // select node reused
+  assert.equal(optA.selected, false);
+  assert.equal(optB.selected, false);
+  assert.equal(optC.selected, true);
+});
+
+test("keyed bulk-bar/list prevents positional identity-swap on selection clear (Stash regression)", () => {
+  const marker = el("div", { "data-key": "item:x" }, "row-x");
+  const listDiv = el("div", { "data-key": "stash-list" }, marker);
+  const bulkDiv = el("div", { "data-key": "bulk-bar" }, "2 selected");
+  const live = el("div", {}, bulkDiv, listDiv);
+
+  // Selection cleared: bulk bar disappears, list survives with its marker child.
+  const freshMarker1 = el("div", { "data-key": "item:x" }, "row-x");
+  const freshList1 = el("div", { "data-key": "stash-list" }, freshMarker1);
+  const fresh1 = el("div", {}, freshList1);
+
+  reconcile(live, fresh1);
+
+  assert.equal(live.children.length, 1);
+  assert.equal(live.children[0], listDiv);             // list identity preserved, not clobbered
+  assert.equal(live.children[0].children[0], marker);  // marker child survived intact
+  assert.equal(live.children[0].children[0].firstChild.nodeValue, "row-x");
+
+  // Reverse: a selection is made again, bulk bar re-inserted ahead of the list.
+  const freshMarker2 = el("div", { "data-key": "item:x" }, "row-x");
+  const freshList2 = el("div", { "data-key": "stash-list" }, freshMarker2);
+  const freshBulk2 = el("div", { "data-key": "bulk-bar" }, "1 selected");
+  const fresh2 = el("div", {}, freshBulk2, freshList2);
+
+  reconcile(live, fresh2);
+
+  assert.equal(live.children.length, 2);
+  assert.equal(live.children[1], listDiv);             // list identity still preserved
+  assert.equal(live.children[1].children[0], marker);  // marker still intact
 });

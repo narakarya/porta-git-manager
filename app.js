@@ -934,6 +934,12 @@
           dirRow.dataset.key = opts.keyFor ? opts.keyFor(metaFile) : metaFile.path;
         }
         const childWrap = h("div", { class: "diff-tree-children" });
+        // NOTE: these dir-row listeners use raw addEventListener, so reconcile's
+        // swapHandlers does NOT refresh them. Safe here because every node they
+        // capture (dirRow/childWrap/chev/folderIcon) is reused-live by the morph,
+        // so the captured references stay valid; only `dirFiles` data may be stale,
+        // which is fine (actions use stable-for-key fields). Anything added here that
+        // captures per-render *data* must go through h()'s on* props instead.
         dirRow.addEventListener("click", (e) => {
           if (onDirPick && (e.metaKey || e.ctrlKey || e.shiftKey)) {
             onDirPick(dirFiles, dirRow, e);
@@ -960,10 +966,10 @@
           tabIndex: -1,
           onMouseDown: (e) => e.preventDefault(),
           onClick: (e) => onPick(f, row, e),
+          onContextMenu: onContextMenu ? (e) => onContextMenu(f, row, e) : undefined,
         }, ...(Array.isArray(inner) ? inner : [inner]));
         row.dataset.path = f.path;
         row.dataset.key = opts.keyFor ? opts.keyFor(f) : f.path;
-        if (onContextMenu) row.addEventListener("contextmenu", (e) => onContextMenu(f, row, e));
         parent.append(row);
       }
     }
