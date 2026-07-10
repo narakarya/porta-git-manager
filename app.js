@@ -4123,11 +4123,12 @@
     async function render(opts) {
       const force = !!(opts && opts.force);
       const node = pane();
-      node.innerHTML = "";
+      const next = document.createElement("div");
       node.className = "pane is-active stash-pane";
 
       const msgInput = h("input", {
         class: "input stash-message-input",
+        key: "stash-msg",
         placeholder: "Stash message (optional)",
         value: msg,
         onInput: (e) => { msg = e.target.value; },
@@ -4136,18 +4137,19 @@
       const untrackedChk = h("input", { type: "checkbox", checked: includeUntracked, onChange: (e) => { includeUntracked = e.target.checked; } });
       const filterInput = h("input", {
         class: "input history-search stash-filter-input",
+        key: "stash-filter",
         placeholder: "Filter stashes…",
         value: filter,
         onInput: (e) => { filter = e.target.value; paint(); },
       });
-      node.append(h("div", { class: "stash-top" },
+      next.append(h("div", { class: "stash-top", key: "stash-top" },
         msgInput,
         h("label", { class: "toolbar-check" }, untrackedChk, "include untracked"),
         h("button", { class: "btn-primary", onClick: save }, "Stash"),
         filterInput,
       ));
 
-      node.append(h("div", { class: "stash-list-wrap" }));
+      next.append(h("div", { class: "stash-list-wrap", key: "stash-list-wrap" }));
 
       if (!loaded || force) {
         const stashes = await loadStash();
@@ -4159,13 +4161,14 @@
         for (const ref of [...selectedRefs]) if (!live.has(ref)) selectedRefs.delete(ref);
         paintTopBar();
       }
+      reconcile(node, next);
       paint();
     }
 
     function paint() {
       const wrap = pane() && pane().querySelector(".stash-list-wrap");
       if (!wrap) return;
-      wrap.innerHTML = "";
+      const nextList = document.createElement("div");
       const stashes = state.stashes || [];
       const f = filter.trim().toLowerCase();
       const visible = f ? stashes.filter((s) => [s.ref, s.msg, s.desc, s.branch, s.when]
@@ -4174,7 +4177,7 @@
       const toggle = (ref, on) => { if (on) selectedRefs.add(ref); else selectedRefs.delete(ref); paint(); };
 
       if (selectedRefs.size > 0) {
-        wrap.append(h("div", { class: "bulk-bar" },
+        nextList.append(h("div", { class: "bulk-bar" },
           h("span", { class: "bulk-count" }, selectedRefs.size + " selected"),
           h("div", { style: { flex: "1" } }),
           h("button", { class: "btn-mini", onClick: () => { selectedRefs.clear(); paint(); } }, "Clear"),
@@ -4196,6 +4199,7 @@
           const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
           list.append(h("div", {
             class: "stash-row" + (selectedRefs.has(s.ref) ? " is-checked" : "") + (viewingRef === s.ref ? " is-viewing" : ""),
+            key: "stash:" + s.ref,
             dataset: { ref: s.ref },
             onClick: () => show(s),
           },
@@ -4223,7 +4227,8 @@
           ));
         }
       }
-      wrap.append(list);
+      nextList.append(list);
+      reconcile(wrap, nextList);
     }
 
     function paintViewing() {
