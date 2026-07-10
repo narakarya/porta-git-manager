@@ -638,7 +638,10 @@ git commit -m "feat: Sync tab updates in place via reconcile"
 
 - app.js:3548 `node.innerHTML = "";` → `const next = document.createElement("div");`
 - Redirect `node.append(` → `next.append(`; add `reconcile(node, next);` before each return and at the end.
-- If `renderDetail(detailNode, commit)` (app.js:3516) does `detailNode.innerHTML=""`+append, convert it: build `nextDetail` and `reconcile(detailNode, nextDetail)` so selecting commits doesn't flash the detail pane.
+- Reuse the LIVE `.history-detail` node (imperative container captured by row `onClick` + `renderDetail`), exactly like Status's `diffNode`.
+- Post-reconcile fixups (select `.value` re-assignment; detail re-apply / stale-clear when the selected commit is gone) must run on **every** exit path, including the `commits.length === 0` early return — factor them into a shared helper called after each `reconcile`.
+
+> **Scope note (parity with Task 3):** `renderDetail`/`paintCommitDetail` stay **imperative** (they keep their own `detailNode.innerHTML=""` + rebuild), matching Status's `renderDiffInto`, which also stays imperative. The detail/diff *populate* functions repaint on selection; that's the accepted precedent. Morph-on-select for BOTH panes (so clicking a commit/file doesn't repaint the detail) is deliberately deferred as optional future polish (would need to be done for Status and History together to stay consistent).
 
 - [ ] **Step 2: Add keys**
 
