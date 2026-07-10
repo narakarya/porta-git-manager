@@ -3238,7 +3238,6 @@
   // ── History tab ──────────────────────────────────────────────────────────
   const historyTab = (() => {
     const pane = () => document.querySelector('.pane[data-pane="history"]');
-    let caretPos = null; // caret offset to restore after a search re-render
     let lastFiles = []; // parsed files of the most-recently-rendered commit (used by Tasks 17/18)
     let logCache = new Map(); // filter string -> commits
     let detailCache = new Map(); // short sha -> rendered detail data
@@ -3611,7 +3610,7 @@
     async function render(opts) {
       const force = !!(opts && opts.force);
       const node = pane();
-      node.innerHTML = "";
+      const next = document.createElement("div");
       node.className = "pane is-active history-pane";
       if (force) branchCache = null;
       const branches = await loadHistoryBranches();
@@ -3622,6 +3621,7 @@
 
       const modeSelect = h("select", {
         class: "input history-mode-select",
+        key: "history-mode-select",
         value: state.historyMode,
         onChange: (e) => {
           state.historyMode = e.target.value;
@@ -3637,6 +3637,7 @@
       );
       const sourceSelect = h("select", {
         class: "input history-source-select",
+        key: "history-source-select",
         value: state.historySourceBranch,
         disabled: state.historyMode !== "source" || branches.length === 0,
         onChange: (e) => {
@@ -3648,9 +3649,10 @@
       }, ...branches.map((name) => h("option", { value: name, selected: name === state.historySourceBranch }, name)));
       const search = h("input", {
         class: "history-search",
+        key: "history-search",
         placeholder: "Filter commits by message…",
         value: state.historyFilter,
-        onInput: (e) => { caretPos = e.target.selectionStart; state.historyFilter = e.target.value; clearTimeout(searchTimer); searchTimer = setTimeout(render, 250); },
+        onInput: (e) => { state.historyFilter = e.target.value; clearTimeout(searchTimer); searchTimer = setTimeout(render, 250); },
       });
       const progress = state.cherryPickInProgress
         ? h("div", { class: "history-progress" },
@@ -3659,7 +3661,7 @@
           h("button", { class: "btn-danger", onClick: abortCherryPick }, "Abort"),
         )
         : null;
-      node.append(h("div", { class: "history-top" },
+      next.append(h("div", { class: "history-top", key: "history-top" },
         modeSelect,
         state.historyMode === "source" && sourceSelect,
         state.historyMode === "source" && h("span", { class: "history-target-chip", title: "Compare base" }, "base " + (state.historySourceBase || targetLabel())),
@@ -3667,14 +3669,18 @@
         search,
         progress,
       ));
-      // The re-render above recreates this input; put the caret back where the
-      // user was typing instead of letting it snap to the end.
-      if (caretPos != null) { search.focus(); try { search.setSelectionRange(caretPos, caretPos); } catch (_) {} caretPos = null; }
 
-      const list = h("div", { class: "history-list" });
-      const detail = h("div", { class: "history-detail" });
-      detail.innerHTML = '<div class="history-detail-empty">Pick a commit to inspect.</div>';
-      node.append(h("div", { class: "history-split" }, list, detail));
+      const list = h("div", { class: "history-list", key: "history-list" });
+      // Reuse the LIVE detail node (if one exists) so renderDetail()'s
+      // post-render mutation and every row's onClick closure hit the real
+      // DOM node, not a freshly-built one that reconcile will discard as
+      // detached (mirrors Status's diffNode).
+      let detail = node.querySelector(".history-detail");
+      if (!detail) {
+        detail = h("div", { class: "history-detail", key: "history-detail" });
+        detail.innerHTML = '<div class="history-detail-empty">Pick a commit to inspect.</div>';
+      }
+      next.append(h("div", { class: "history-split", key: "history-split" }, list, detail));
 
       const scope = historyScope();
       const cacheKey = [state.historyMode, state.historySourceBranch, state.historySourceBase || "", targetRef(), state.historyFilter || ""].join("\x1f");
@@ -3690,9 +3696,31 @@
       state.log = commits;
       const live = new Set(commits.map((c) => commitRef(c)));
       for (const sha of Array.from(selectedCommits)) if (!live.has(sha)) selectedCommits.delete(sha);
+
+      // Post-reconcile fixups that must run on EVERY exit path (queried against
+      // the LIVE nodes reconcile kept). On the empty path this clears a stale
+      // detail whose commit is no longer in the list, and sets select values.
+      function applyHistoryFixups(commitList) {
+        // syncAttrs sets a <select>'s value BEFORE its <option> children are
+        // reconciled, which can revert it — re-assign after reconcile (Branches).
+        const ms = node.querySelector(".history-mode-select");
+        if (ms) ms.value = state.historyMode;
+        const ss = node.querySelector(".history-source-select");
+        if (ss) ss.value = state.historySourceBranch;
+        // Re-show last detail if it matches; clear it if the selected commit
+        // was filtered/pruned away (mirrors Status's diff clear).
+        if (state.selectedCommit) {
+          const cur = commitList.find((c) => c.sha === state.selectedCommit);
+          if (cur) renderDetail(detail, cur);
+          else { state.selectedCommit = null; detail.innerHTML = '<div class="history-detail-empty">Pick a commit to inspect.</div>'; }
+        }
+      }
+
       if (commits.length === 0) {
         list.append(h("div", { class: "empty-files" },
           state.historyMode === "source" ? "No source-only commits in " + (state.historySourceBranch || "selected branch") : "No commits match"));
+        reconcile(node, next);
+        applyHistoryFixups(commits);
         return;
       }
       if (state.historyMode === "source") {
@@ -3731,6 +3759,7 @@
         const bodyPreview = (c.body || "").trim();
         const row = h("div", {
           class: "log-row" + (state.historyMode === "source" ? " has-check" : "") + (state.selectedCommit === c.sha ? " is-selected" : "") + (checked ? " is-checked" : ""),
+          key: "c:" + ref,
           onClick: () => {
             state.selectedCommit = c.sha;
             document.querySelectorAll(".log-row").forEach((r) => r.classList.toggle("is-selected", r.dataset.sha === c.sha));
@@ -3749,11 +3778,8 @@
         );
         list.append(row);
       }
-      // Re-show last detail if it matches
-      if (state.selectedCommit) {
-        const cur = commits.find((c) => c.sha === state.selectedCommit);
-        if (cur) renderDetail(detail, cur);
-      }
+      reconcile(node, next);
+      applyHistoryFixups(commits);
     }
 
     let searchTimer = 0;
