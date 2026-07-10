@@ -4249,7 +4249,6 @@
     let newMsg = "";
     let annotated = true;
     let filter = "";
-    let caretPos = null; // caret offset to restore after a filter re-render
     let tags = [];
     let loaded = false;
 
@@ -4318,11 +4317,12 @@
     async function render(opts) {
       const force = !!(opts && opts.force);
       const node = pane();
-      node.innerHTML = "";
+      const next = document.createElement("div");
       node.className = "pane is-active tags-pane";
 
       const nameInput = h("input", {
         class: "input tag-name-input",
+        key: "tag-name",
         placeholder: "Tag name (e.g. v1.0.0)",
         value: newName,
         onInput: (e) => { newName = e.target.value; },
@@ -4330,6 +4330,7 @@
       });
       const msgInput = h("input", {
         class: "input tag-message-input",
+        key: "tag-msg",
         placeholder: "Message (annotated tags)",
         value: newMsg,
         onInput: (e) => { newMsg = e.target.value; },
@@ -4341,12 +4342,13 @@
       });
       const filterInput = h("input", {
         class: "history-search tag-filter-input",
+        key: "tag-filter",
         placeholder: "Filter…",
         value: filter,
-        onInput: (e) => { caretPos = e.target.selectionStart; filter = e.target.value; render(); },
+        onInput: (e) => { filter = e.target.value; render(); },
       });
 
-      node.append(h("div", { class: "tags-top" },
+      next.append(h("div", { class: "tags-top", key: "tags-top" },
         nameInput,
         msgInput,
         h("label", { class: "toolbar-check" }, annChk, "annotated"),
@@ -4354,8 +4356,6 @@
         h("div", { class: "toolbar-spacer" }),
         filterInput,
       ));
-      // Keep the caret where the user was typing across the filter re-render.
-      if (caretPos != null) { filterInput.focus(); try { filterInput.setSelectionRange(caretPos, caretPos); } catch (_) {} caretPos = null; }
 
       if (!loaded || force) {
         tags = await loadTags();
@@ -4364,12 +4364,12 @@
       const f = filter.toLowerCase();
       const visible = f ? tags.filter((t) => t.name.toLowerCase().includes(f)) : tags;
 
-      const list = h("div", { class: "tags-list" });
+      const list = h("div", { class: "tags-list", key: "tags-list" });
       if (visible.length === 0) {
         list.append(h("div", { class: "empty-files" }, tags.length === 0 ? "No tags" : "No tags match"));
       } else {
         for (const t of visible) {
-          list.append(h("div", { class: "tag-row" },
+          list.append(h("div", { class: "tag-row", key: "tag:" + t.name },
             h("span", { class: "tag-name", title: t.name, html: window.GMText.highlightMatches(t.name, f) }),
             h("span", { class: "tag-sha" }, t.sha),
             h("span", { class: "tag-msg", title: t.msg }, t.msg),
@@ -4381,7 +4381,8 @@
           ));
         }
       }
-      node.append(list);
+      next.append(list);
+      reconcile(node, next);
     }
 
     return { render, invalidate: () => { loaded = false; } };
