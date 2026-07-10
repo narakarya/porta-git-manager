@@ -4,6 +4,11 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.61] — 2026-07-10
+
+### Changed
+- **Staging, unstaging, discarding, committing, and refreshing no longer redraw the whole tab.** Every tab now updates the DOM in place through a keyed reconciler, so the file list keeps its scroll position, inputs keep focus and caret, text selection survives, and the pane no longer flickers on each action. Applies across Status, Branches, Sync, History, Rebase, Stash, Tags, and PR — including their live filter boxes and list re-paints.
+
 ## [0.7.60] — 2026-06-20
 
 ### Added
