@@ -155,6 +155,98 @@
     return i === -1 ? { dir: "", name: p } : { dir: p.slice(0, i + 1), name: p.slice(i + 1) };
   }
 
+  // ── Clipboard ────────────────────────────────────────────────────────────
+  /**
+   * Copy text to the clipboard. Falls back to a hidden textarea + execCommand
+   * when the async Clipboard API is missing or rejects (older host webviews,
+   * non-secure contexts).
+   */
+  async function copyText(text) {
+    const value = text == null ? "" : String(text);
+    if (!value) return false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+    } catch (_) { /* fall through to execCommand */ }
+    try {
+      const ta = h("textarea", {
+        value,
+        readOnly: true,
+        style: { position: "fixed", top: "0", left: "0", opacity: "0", pointerEvents: "none" },
+      });
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /** Current document selection as plain text ("" when nothing is selected). */
+  function selectedText() {
+    const sel = window.getSelection ? window.getSelection() : null;
+    return sel && !sel.isCollapsed ? String(sel) : "";
+  }
+
+  /** Replace the selected range of an input/textarea and keep app state in sync. */
+  function replaceFieldSelection(field, text) {
+    const value = String(field.value || "");
+    const start = field.selectionStart == null ? value.length : field.selectionStart;
+    const end = field.selectionEnd == null ? start : field.selectionEnd;
+    field.value = value.slice(0, start) + text + value.slice(end);
+    const caret = start + text.length;
+    field.focus();
+    try { field.setSelectionRange(caret, caret); } catch (_) { /* type=email etc. */ }
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  /**
+   * Clipboard entries for the default right-click menu. The host webview has no
+   * native context menu here (we preventDefault it so our own menus can win), so
+   * Cut/Copy/Paste have to be provided by us.
+   */
+  function clipboardMenuItems(target) {
+    const field = target && target.closest ? target.closest("input, textarea") : null;
+    if (field && !field.readOnly && !field.disabled) {
+      const value = String(field.value || "");
+      const start = field.selectionStart == null ? 0 : field.selectionStart;
+      const end = field.selectionEnd == null ? 0 : field.selectionEnd;
+      const picked = value.slice(start, end);
+      return [
+        { label: "Cut", disabled: !picked, action: async () => {
+            if (await copyText(picked)) replaceFieldSelection(field, "");
+            else ui.toast("Could not copy", "error", 2000);
+          } },
+        { label: "Copy", disabled: !picked, action: () => copyMenuAction(picked) },
+        { label: "Paste", action: async () => {
+            try {
+              const text = await navigator.clipboard.readText();
+              if (text) replaceFieldSelection(field, text);
+            } catch (_) {
+              ui.toast("Paste blocked — use " + (isMac() ? "⌘V" : "Ctrl+V"), "error", 2500);
+            }
+          } },
+        { separator: true },
+        { label: "Select all", disabled: !value, action: () => { field.focus(); field.select(); } },
+      ];
+    }
+    const picked = selectedText();
+    return picked ? [{ label: "Copy", action: () => copyMenuAction(picked) }] : [];
+  }
+
+  async function copyMenuAction(text) {
+    if (await copyText(text)) ui.toast("Copied", "success", 1200);
+    else ui.toast("Could not copy", "error", 2000);
+  }
+
+  function isMac() {
+    return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+  }
+
   function closeContextMenu() {
     const menu = document.querySelector(".context-menu");
     if (menu) menu.remove();
@@ -205,8 +297,14 @@
     }, 0);
   }
 
+  // Default right-click: no native menu in the host webview, so offer clipboard
+  // actions when there is something to copy (or an editable field under the
+  // cursor). Element-specific menus call showContextMenu first and mark the
+  // event handled, so they still win.
   document.addEventListener("contextmenu", (e) => {
     if (e.defaultPrevented) return;
+    const items = clipboardMenuItems(e.target);
+    if (items.length) { showContextMenu(e, items); return; }
     e.preventDefault();
     closeContextMenu();
   });
@@ -1963,7 +2061,7 @@
           : { label: file.submodule ? "Stage all" : "Stage", action: () => stage(file.path, file.submodule) },
         !isStaged && { label: isUntracked ? "Delete" : "Discard", danger: true, action: () => discard(file) },
         { separator: true },
-        { label: "Copy path", action: async () => navigator.clipboard?.writeText(file.path) },
+        { label: "Copy path", action: () => copyMenuAction(file.path) },
       ]);
     }
 
@@ -2812,25 +2910,8 @@
       }
 
       async function copyBranchName(name) {
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(name);
-          } else {
-            const input = h("textarea", {
-              value: name,
-              readOnly: true,
-              style: { position: "fixed", opacity: "0", pointerEvents: "none" },
-            });
-            document.body.appendChild(input);
-            input.select();
-            const ok = document.execCommand("copy");
-            input.remove();
-            if (!ok) throw new Error("copy failed");
-          }
-          ui.toast("Copied branch name", "success", 1200);
-        } catch (_) {
-          ui.toast("Could not copy branch name", "error", 2500);
-        }
+        if (await copyText(name)) ui.toast("Copied branch name", "success", 1200);
+        else ui.toast("Could not copy branch name", "error", 2500);
       }
 
       function copyBranchButton(b) {
@@ -3514,7 +3595,7 @@
       const copyBtn = h("button", { class: "row-action", title: "Copy full SHA",
         onClick: async (e) => {
           e.stopPropagation();
-          try { await navigator.clipboard.writeText(commit.fullSha); ui.toast("Copied SHA", "success", 1200); }
+          try { if (!await copyText(commit.fullSha)) throw new Error("copy failed"); ui.toast("Copied SHA", "success", 1200); }
           catch (_) { ui.toast("Copy failed", "error"); }
         } }, "copy");
       const pillRow = h("div", { class: "pill-row" }, shaPill, copyBtn);
@@ -4896,6 +4977,17 @@
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
   function bindKeys() {
+    // ⌘/Ctrl+C fallback: host webviews without a native Edit menu never fire the
+    // browser's own copy. Writing the selection ourselves is a harmless
+    // duplicate where the native path does work.
+    window.addEventListener("keydown", (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || (e.key || "").toLowerCase() !== "c") return;
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      const picked = selectedText();
+      if (picked) copyText(picked);
+    });
+
     window.addEventListener("keydown", (e) => {
       // Ignore typing in inputs/textareas.
       const target = e.target;

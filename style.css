@@ -146,6 +146,16 @@ html, body {
   font-size: 12px;
   line-height: 1.45;
   overflow: hidden;
+  /* Content is selectable by default so diffs, messages and command output can
+     be copied; chrome (tabs, buttons, click-target rows) opts back out below. */
+  user-select: text;
+}
+
+/* App chrome — clicking/dragging these should never paint a text selection. */
+.tabs, .tab, .tab-badge, .branch-chip, .quickbar, .quick-btn, .icon-btn,
+button, .kbd, .toolbar-check, .commit-options label, .view-toggle,
+.file-section-title, .hunk-header, .rebase-todo-row .grip,
+.context-menu, .toast {
   user-select: none;
 }
 
