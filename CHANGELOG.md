@@ -4,6 +4,13 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.62] — 2026-08-28
+
+### Fixed
+- **Text is copyable again.** The app shell set `user-select: none` on `<body>`, so nothing — diffs, commit messages, command output, even input fields — could be selected. Content is now selectable by default and only chrome (tabs, buttons, headers, line-number gutters, drag grips) opts out.
+- **Right-click offers clipboard actions.** The host webview has no native context menu here; the default menu now shows Copy when text is selected, and Cut / Copy / Paste / Select all over an input or textarea.
+- **⌘/Ctrl+C fallback.** Host webviews without an Edit menu never fire the browser's own copy, so the selection is written to the clipboard directly.
+
 ## [0.7.61] — 2026-07-10
 
 ### Changed
