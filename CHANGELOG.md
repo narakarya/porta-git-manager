@@ -4,6 +4,22 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-03
+
+### Added
+- **A file tree in History.** A commit was one flat scroll of every file it touched — thirty files meant scrolling past thirty diffs to reach the last one, and all thirty were built whether you looked at them or not. The commit detail now has the same navigator the diff modal uses, sticky beside the diff, and picking a file renders that file alone. Single-file commits are unchanged; there is nothing to navigate.
+- **Search that matches terms in any order.** Typing `panel comp` now finds `src/components/app/ExtensionPanel.tsx`. Filtering was a single literal substring, so you had to guess the path order or get nothing back. Every matched term is highlighted, and overlapping matches merge instead of nesting.
+- **A clear button, and Escape to clear**, on every filter box. Escape only clears when there is something to clear; on an empty box it still closes the modal around it.
+
+### Fixed
+- **Selecting a split diff copied both columns spliced together.** A diff is built as rows of cells, so dragging down the right-hand column walked the left one too: you pasted the old and new version of every line, alternating, with context doubled. Copying now takes only the column the selection started in, and drops the line-number gutters. A selection inside a single line is left alone — partial copying is right there.
+- **Every dropdown is the same control.** The diff modal's options and the commit stat strip used bare native selects, complete with the platform's own arrow, right next to the app's styled ones. They now share one definition and keep only their size.
+- **The dropdown arrow follows the theme.** It is baked into a data URI and so cannot inherit a colour; its stroke was the dark theme's grey whatever the palette, which left it washed out on Paper's cream.
+- **Disclosure chevrons no longer nudge the row as they turn.** They were the `▸`/`▾` character pair — different widths, so every expand or collapse shifted whatever sat beside them, and they could not animate. One rotated icon now, with a fixed box.
+
+### Changed
+- Seven filter boxes with five different class combinations became one control. The shell draws the field; the per-list classes carry only sizing, which is the one thing that genuinely differs between toolbars.
+
 ## [0.7.63] — 2026-09-03
 
 ### Added
