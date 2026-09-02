@@ -243,6 +243,62 @@
     else ui.toast("Could not copy", "error", 2000);
   }
 
+  // ── Diff copy ────────────────────────────────────────────────────────────
+
+  /**
+   * The copy control a hunk header carries.
+   *
+   * A menu rather than three inline buttons: a hunk header in the staging view
+   * already holds Stage/Discard, and spelling all three flavours out beside
+   * them crowded it to five. "New" leads because the code as it now reads is
+   * what you usually want to paste somewhere; "old" is there for when you are
+   * reaching back for what a change replaced.
+   *
+   * Selecting a diff by dragging can't do this — it takes both sides at once,
+   * and in split view it takes them interleaved.
+   */
+  function copyHunkAction(hunk) {
+    return h("button", {
+      class: "hunk-action",
+      title: "Copy this hunk",
+      onClick: (e) => {
+        const next = window.GMDiff.hunkText(hunk, "new");
+        const prev = window.GMDiff.hunkText(hunk, "old");
+        showContextMenu(e, [
+          { label: "Copy new", disabled: !next, action: () => copyMenuAction(next) },
+          { label: "Copy old", disabled: !prev, action: () => copyMenuAction(prev) },
+          { separator: true },
+          { label: "Copy as patch", action: () => copyMenuAction(window.GMDiff.hunkText(hunk, "patch")) },
+        ]);
+      },
+    }, "Copy");
+  }
+
+  /**
+   * The copy control on a file's sticky header.
+   *
+   * Only the path and the patch, because those are the two things a file-level
+   * copy can honestly produce. There is no "copy this file's new side": a diff
+   * carries changed regions and their context, not the file, so concatenating
+   * each hunk would hand you something that reads as contiguous code while
+   * silently dropping everything between the hunks.
+   *
+   * `stopPropagation` because the header's own click collapses the file.
+   */
+  function copyFileAction(file) {
+    return h("button", {
+      class: "hunk-action diff-file-copy",
+      title: "Copy path or patch",
+      onClick: (e) => {
+        e.stopPropagation();
+        showContextMenu(e, [
+          { label: "Copy path", disabled: !file.path, action: () => copyMenuAction(file.path) },
+          { label: "Copy as patch", action: () => copyMenuAction(window.GMDiff.filePatch(file)) },
+        ]);
+      },
+    }, "Copy");
+  }
+
   function isMac() {
     return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
   }
@@ -792,7 +848,9 @@
     }
     for (const hunk of f.hunks) {
       const wrapper = h("div", { class: "hunk" });
-      wrapper.append(h("div", { class: "hunk-header" }, hunk.header));
+      wrapper.append(h("div", { class: "hunk-header" },
+        h("span", { class: "hunk-range" }, hunk.header),
+        h("span", { class: "hunk-actions" }, copyHunkAction(hunk))));
       const range = window.GMDiff.parseHunkHeader(hunk.header);
       const rows = window.GMDiff.numberHunkLines(hunk.lines, range);
       for (let k = 0; k < rows.length; k++) {
@@ -822,7 +880,9 @@
   function gmBuildSplitBody(body, f, lang) {
     for (const hunk of f.hunks) {
       const wrapper = h("div", { class: "hunk hunk-split" });
-      wrapper.append(h("div", { class: "hunk-header" }, hunk.header));
+      wrapper.append(h("div", { class: "hunk-header" },
+        h("span", { class: "hunk-range" }, hunk.header),
+        h("span", { class: "hunk-actions" }, copyHunkAction(hunk))));
       const range = window.GMDiff.parseHunkHeader(hunk.header);
       const numbered = window.GMDiff.numberHunkLines(hunk.lines, range);
       const splitRows = window.GMDiff.toSplitRows(numbered);
@@ -883,6 +943,7 @@
           st.add ? h("span", { class: "stat-add" }, "+" + st.add) : null,
           st.del ? h("span", { class: "stat-del" }, "−" + st.del) : null,
         ),
+        h("span", { class: "hunk-actions" }, copyFileAction(f)),
       );
       head.addEventListener("click", () => {
         const collapsed = block.classList.toggle("is-collapsed");
@@ -931,6 +992,7 @@
           st.add ? h("span", { class: "stat-add" }, "+" + st.add) : null,
           st.del ? h("span", { class: "stat-del" }, "−" + st.del) : null,
         ),
+        h("span", { class: "hunk-actions" }, copyFileAction(f)),
       );
       head.addEventListener("click", () => {
         const collapsed = block.classList.toggle("is-collapsed");
@@ -1654,7 +1716,8 @@
             h("button", { class: "hunk-action", onClick: () => unstageOneHunk(filePath, hunk) }, "Unstage hunk"),
           );
         }
-        wrapper.appendChild(h("div", { class: "hunk-header" }, hunk.header, actions));
+        if (!parsed.submodule) actions.append(copyHunkAction(hunk));
+        wrapper.appendChild(h("div", { class: "hunk-header" }, h("span", { class: "hunk-range" }, hunk.header), actions));
         renderHunkBody(wrapper, hunk, lang);
         node.appendChild(wrapper);
       }
@@ -1681,7 +1744,7 @@
     function renderFilePreview(node, parsed, source, filePath) {
       const p = parsed.preview;
       const wrapper = h("div", { class: "hunk status-preview status-preview-" + p.kind });
-      wrapper.appendChild(h("div", { class: "hunk-header" }, "@@ preview " + p.kind + " @@", previewActions(source, filePath)));
+      wrapper.appendChild(h("div", { class: "hunk-header" }, h("span", { class: "hunk-range" }, "@@ preview " + p.kind + " @@"), previewActions(source, filePath)));
 
       if (p.kind === "image") {
         if (p.error) {
@@ -1772,7 +1835,7 @@
         h("button", { class: "hunk-action", onClick: () => stage(filePath) }, "Stage all"),
         h("button", { class: "hunk-action danger", onClick: () => deleteUntracked({ path: filePath }) }, "Delete"),
       );
-      wrapper.appendChild(h("div", { class: "hunk-header" }, "@@ untracked files @@", actions));
+      wrapper.appendChild(h("div", { class: "hunk-header" }, h("span", { class: "hunk-range" }, "@@ untracked files @@"), actions));
 
       if (!parsed.files.length) {
         wrapper.appendChild(h("div", { class: "diff-large-note" }, "No files found in this folder."));

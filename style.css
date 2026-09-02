@@ -710,10 +710,42 @@ html[data-gm-theme="paper"] ::selection {
   transition: opacity 0.12s;
 }
 .hunk:hover .hunk-header .hunk-actions { opacity: 1; }
+
+/* A commit or modal diff suppresses the @@ ranges — they are noise once the
+   sticky file header names the file. The row itself has to stay, though: it
+   carries the hunk's copy control. So collapse it to nothing and float the
+   actions over the top-right corner of the hunk on hover, which costs no
+   vertical space and cannot push the code around. */
+.commit-diff .hunk-header .hunk-range,
+.diff-modal-content .hunk-header .hunk-range { display: none; }
 .commit-diff .hunk-header,
 .diff-modal-content .hunk-header {
-  display: none;
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
 }
+.commit-diff .hunk-header .hunk-actions,
+.diff-modal-content .hunk-header .hunk-actions {
+  position: absolute;
+  right: 10px;
+  top: 3px;
+  z-index: 2;
+  opacity: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+}
+.commit-diff .hunk:hover .hunk-header .hunk-actions,
+.diff-modal-content .hunk:hover .hunk-header .hunk-actions { opacity: 1; }
+
+/* File header copy sits with the +/- stats rather than pushing them off the
+   right edge, and only shows on hover so a long file list stays quiet. */
+.diff-file-head .hunk-actions { opacity: 0; }
+.diff-file-head:hover .hunk-actions,
+.diff-file-head .hunk-actions:focus-within { opacity: 1; }
 .hunk-action {
   background: transparent;
   border: 0;

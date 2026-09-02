@@ -110,5 +110,57 @@
     return rows;
   }
 
-  return { parseHunkHeader, numberHunkLines, wordDiff, toSplitRows };
+  /**
+   * The code a hunk contributes to one side of the change.
+   *
+   * `side` is "new" (context + additions — how the file reads after the
+   * change), "old" (context + deletions — how it read before), or "patch"
+   * (the hunk verbatim, header included, which is what `git apply` wants).
+   *
+   * For "old"/"new" the leading marker column is stripped, so the result is
+   * real code you can paste into an editor rather than something that needs
+   * cleaning up first. Git's `\ No newline at end of file` is an annotation
+   * about the content, not content, so it is dropped from both sides — but
+   * kept in "patch", where it is load-bearing.
+   */
+  function hunkText(hunk, side) {
+    if (!hunk) return "";
+    const lines = hunk.lines || [];
+    if (side === "patch") return [hunk.header].concat(lines).join("\n");
+    const keep = side === "old" ? "-" : "+";
+    const out = [];
+    for (const line of lines) {
+      const c = line[0];
+      if (c === "\\") continue;
+      if (c === "+" || c === "-") {
+        if (c === keep) out.push(line.slice(1));
+        continue;
+      }
+      // Context. A completely empty line has no marker column to strip.
+      out.push(line.startsWith(" ") ? line.slice(1) : line);
+    }
+    return out.join("\n");
+  }
+
+  /**
+   * A whole file's diff as an applicable patch: its `diff --git` header
+   * followed by every hunk.
+   *
+   * Deliberately the only file-level flavour. A diff holds changed regions and
+   * their context, not the file — concatenating each hunk's "new" side would
+   * produce something that *looks* like contiguous code while silently
+   * omitting everything between the hunks, which is exactly the kind of paste
+   * that goes wrong quietly.
+   */
+  function filePatch(file) {
+    if (!file) return "";
+    const parts = (file.header || []).slice();
+    for (const hk of file.hunks || []) {
+      parts.push(hk.header);
+      for (const line of hk.lines || []) parts.push(line);
+    }
+    return parts.join("\n");
+  }
+
+  return { parseHunkHeader, numberHunkLines, wordDiff, toSplitRows, hunkText, filePatch };
 });

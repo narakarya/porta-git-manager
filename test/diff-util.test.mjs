@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import pkg from "../diff-util.js";
-const { parseHunkHeader, numberHunkLines, wordDiff, toSplitRows } = pkg;
+const { parseHunkHeader, numberHunkLines, wordDiff, toSplitRows, hunkText, filePatch } = pkg;
 
 test("parseHunkHeader reads both ranges", () => {
   assert.deepEqual(parseHunkHeader("@@ -12,6 +12,7 @@ render()"),
@@ -122,4 +122,77 @@ test("toSplitRows ignores meta rows", () => {
   const rows = toSplitRows(numbered);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].left.kind, "ctx");
+});
+
+// ── hunkText / filePatch ────────────────────────────────────────────────────
+
+const HUNK = {
+  header: "@@ -1,4 +1,4 @@",
+  lines: [
+    " unchanged before",
+    "-was this",
+    "+is this now",
+    " unchanged after",
+  ],
+};
+
+test("hunkText new side keeps context and additions, without markers", () => {
+  assert.equal(
+    hunkText(HUNK, "new"),
+    "unchanged before\nis this now\nunchanged after",
+  );
+});
+
+test("hunkText old side keeps context and deletions, without markers", () => {
+  assert.equal(
+    hunkText(HUNK, "old"),
+    "unchanged before\nwas this\nunchanged after",
+  );
+});
+
+test("hunkText patch is the hunk verbatim, header included", () => {
+  assert.equal(
+    hunkText(HUNK, "patch"),
+    ["@@ -1,4 +1,4 @@"].concat(HUNK.lines).join("\n"),
+  );
+});
+
+test("hunkText drops the no-newline annotation from old and new", () => {
+  const h = { header: "@@ -1 +1 @@", lines: ["-a", "+b", "\\ No newline at end of file"] };
+  assert.equal(hunkText(h, "new"), "b");
+  assert.equal(hunkText(h, "old"), "a");
+  // …but it is part of the patch, where git needs it.
+  assert.match(hunkText(h, "patch"), /No newline at end of file/);
+});
+
+test("hunkText leaves a blank context line blank rather than eating a character", () => {
+  const h = { header: "@@ -1,3 +1,3 @@", lines: [" a", "", "+c"] };
+  assert.equal(hunkText(h, "new"), "a\n\nc");
+});
+
+test("hunkText on an addition-only hunk gives nothing for the old side", () => {
+  const h = { header: "@@ -0,0 +1,2 @@", lines: ["+one", "+two"] };
+  assert.equal(hunkText(h, "new"), "one\ntwo");
+  assert.equal(hunkText(h, "old"), "");
+});
+
+test("hunkText tolerates a missing hunk", () => {
+  assert.equal(hunkText(null, "new"), "");
+});
+
+test("filePatch joins the file header with every hunk", () => {
+  const file = {
+    header: ["diff --git a/x.js b/x.js", "--- a/x.js", "+++ b/x.js"],
+    hunks: [HUNK, { header: "@@ -20,1 +20,1 @@", lines: ["-old", "+new"] }],
+  };
+  const out = filePatch(file);
+  assert.ok(out.startsWith("diff --git a/x.js b/x.js"));
+  assert.match(out, /@@ -1,4 \+1,4 @@/);
+  assert.match(out, /@@ -20,1 \+20,1 @@/);
+  // Every body line survives, in order.
+  assert.ok(out.endsWith("-old\n+new"));
+});
+
+test("filePatch tolerates a missing file", () => {
+  assert.equal(filePatch(null), "");
 });
