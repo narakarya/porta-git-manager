@@ -4,6 +4,15 @@ All notable changes to porta-git-manager are documented here. This file follows 
 
 ## [Unreleased]
 
+## [0.7.63] — 2026-09-03
+
+### Added
+- **Copy a hunk's new side, old side, or patch.** Getting code out of a diff meant dragging a selection across it, which takes both sides at once — and in split view takes them interleaved, one column spliced into the other. Every hunk header now carries a **Copy** menu: *new* (context + additions — how the file reads after the change), *old* (context + deletions — how it read before), or *as patch* (the hunk verbatim, ready for `git apply`). The `+`/`-` markers are stripped for old and new, so what lands on the clipboard is code you can paste straight into an editor.
+- **Copy a file's path or patch.** The sticky file header in a diff has its own **Copy**. There is deliberately no file-level "new side": a diff holds changed regions and their context, not the file, so stitching the hunks together would read as contiguous code while silently omitting everything between them.
+
+### Changed
+- Commit and modal diffs still hide the `@@` ranges, but the row they sit in now stays — it carries the hunk's copy control. The row collapses to zero height and the control floats over the hunk's top-right on hover, so nothing shifts and no vertical space is spent.
+
 ## [0.7.62] — 2026-08-28
 
 ### Fixed
