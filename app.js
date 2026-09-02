@@ -189,7 +189,57 @@
   /** Current document selection as plain text ("" when nothing is selected). */
   function selectedText() {
     const sel = window.getSelection ? window.getSelection() : null;
-    return sel && !sel.isCollapsed ? String(sel) : "";
+    if (!sel || sel.isCollapsed) return "";
+    return diffSelectionText(sel) || String(sel);
+  }
+
+  /**
+   * What a selection across diff rows should actually put on the clipboard.
+   *
+   * A diff is laid out as rows of cells, so the browser reads it the way it is
+   * built rather than the way it looks. In split view that is ruinous: dragging
+   * down the right-hand column walks *both* columns, and you paste the old and
+   * new versions of every line spliced together, alternating. Unified fares
+   * better only because the gutters opt out of selection.
+   *
+   * So when a selection spans more than one row, rebuild it from the `.diff-code`
+   * of the rows it touches, taking only the column the selection started in.
+   * Returns null when this does not apply — a selection inside a single line
+   * (where partial, character-level copying is exactly right) or one that never
+   * touched a diff — and the caller falls back to the browser's own text.
+   */
+  function diffSelectionText(sel) {
+    const startEl = sel.anchorNode && sel.anchorNode.nodeType === 1
+      ? sel.anchorNode
+      : sel.anchorNode && sel.anchorNode.parentElement;
+    if (!startEl || !startEl.closest) return null;
+
+    // `.diff-line` is a unified row; `.diff-cell` is one side of a split row.
+    const startRow = startEl.closest(".diff-line, .diff-cell");
+    if (!startRow) return null;
+
+    const scope = startRow.closest(".hunk");
+    if (!scope) return null;
+
+    // The column to follow. Unified has one; split has two, and the one the
+    // drag began in is the one the user meant.
+    const side = startRow.classList.contains("diff-cell-right") ? "diff-cell-right"
+      : startRow.classList.contains("diff-cell-left") ? "diff-cell-left"
+      : null;
+    const rows = [...scope.querySelectorAll(side ? "." + side : ".diff-line")]
+      .filter((row) => sel.containsNode(row, true));
+    if (rows.length < 2) return null;   // one row: let the browser do it
+
+    const lines = rows
+      .filter((row) => !row.classList.contains("diff-blank"))
+      .map((row) => {
+        const code = row.querySelector(".diff-code");
+        return code ? code.textContent : "";
+      });
+    // A run of blank padding cells at the end of a split hunk would otherwise
+    // paste as trailing empty lines.
+    while (lines.length && lines[lines.length - 1] === "") lines.pop();
+    return lines.length ? lines.join("\n") : null;
   }
 
   /** Replace the selected range of an input/textarea and keep app state in sync. */
@@ -352,6 +402,18 @@
       window.addEventListener("keydown", onContextMenuKey, true);
     }, 0);
   }
+
+  // ⌘C / Ctrl+C and the host's Edit ▸ Copy both end up here. Rewriting the
+  // payload rather than blocking the event keeps every other copy on the page
+  // (commit messages, command output, inputs) exactly as it was.
+  document.addEventListener("copy", (e) => {
+    const sel = window.getSelection ? window.getSelection() : null;
+    if (!sel || sel.isCollapsed) return;
+    const text = diffSelectionText(sel);
+    if (!text || !e.clipboardData) return;
+    e.clipboardData.setData("text/plain", text);
+    e.preventDefault();
+  });
 
   // Default right-click: no native menu in the host webview, so offer clipboard
   // actions when there is something to copy (or an editable field under the
