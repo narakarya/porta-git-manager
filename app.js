@@ -603,7 +603,7 @@
         const wsLabel = h("label", { class: "diff-modal-opt" }, wsChk, "Ignore whitespace");
 
         const ctxSelect = h("select", {
-          class: "diff-modal-opt-select",
+          class: "input diff-modal-opt-select",
           onChange: (e) => { contextLines = e.target.value === "all" ? 99999 : Number(e.target.value); reload(); },
         },
           h("option", { value: "3" }, "±3 ctx"),
@@ -3824,7 +3824,7 @@
       const total = totals.add + totals.del || 1;
       const addPct = (totals.add / total) * 100;
       const contextSelect = h("select", {
-        class: "diff-modal-opt-select commit-context-select",
+        class: "input diff-modal-opt-select commit-context-select",
         title: "Unchanged lines around each change",
         value: historyDetailContextLines >= 99999 ? "all" : String(historyDetailContextLines),
         onChange: (e) => {
