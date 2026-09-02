@@ -37,11 +37,24 @@
     return root;
   }
 
-  /** Case-insensitive substring filter over `f.path`. Empty query returns all. */
-  function filterFiles(files, query) {
-    const q = (query || "").toLowerCase();
+  /**
+   * Filter by path, matching every whitespace-separated term in any order
+   * (see `GMText.matchesQuery`). Empty query returns all.
+   *
+   * The matcher is passed in rather than imported so this module stays
+   * dependency-free for its own tests; callers hand it `GMText.matchesQuery`.
+   */
+  function filterFiles(files, query, matcher) {
+    const q = String(query == null ? "" : query).trim();
     if (!q) return files.slice();
-    return files.filter((f) => (f.path || "").toLowerCase().includes(q));
+    const match = matcher || defaultMatch;
+    return files.filter((f) => match(f.path || "", q));
+  }
+
+  function defaultMatch(text, query) {
+    const lower = String(text).toLowerCase();
+    return String(query).trim().toLowerCase().split(/\s+/).filter(Boolean)
+      .every((t) => lower.includes(t));
   }
 
   return { fileTree, filterFiles };

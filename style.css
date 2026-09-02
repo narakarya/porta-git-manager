@@ -447,18 +447,7 @@ html[data-gm-theme="paper"] ::selection {
   min-height: 36px;
   min-width: 0;
 }
-.status-filter {
-  flex: 1;
-  max-width: 280px;
-  min-width: 120px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 11px;
-  color: var(--text);
-  padding: 4px 8px;
-}
-.status-filter:focus { outline: none; border-color: rgba(96, 165, 250, 0.4); }
+.status-filter { flex: 1; max-width: 280px; min-width: 120px; }
 
 .status-split {
   display: grid;
@@ -1160,17 +1149,7 @@ html[data-gm-theme="paper"] ::selection {
   flex: 0 0 auto;
   min-width: 0;
 }
-.history-search {
-  flex: 1 1 220px;
-  max-width: 280px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 11px;
-  padding: 4px 8px;
-}
-.history-search:focus { outline: none; border-color: rgba(96, 165, 250, 0.4); }
+.history-search { flex: 1 1 220px; max-width: 280px; }
 .history-mode-select {
   flex: 0 0 145px;
   height: 26px;
@@ -2166,16 +2145,65 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   flex: 0 0 auto;
   min-width: 0;
 }
-.diff-tree-filter {
-  flex: 1;
+.diff-tree-filter { flex: 1; min-width: 0; }
+/* ─── Shared search box ────────────────────────────────────────────────────
+   One control behind every filterable list (`gmSearchInput`). The shell draws
+   the field — background, border, focus ring — so the per-list classes that
+   remain (.status-filter, .tag-filter-input, …) only carry sizing, which is
+   the one thing that genuinely differs between toolbars. */
+.gm-search {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  height: 24px;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
+  min-width: 0;
+  transition: border-color 0.12s;
+}
+.gm-search:focus-within { border-color: rgba(96, 165, 250, 0.45); }
+.gm-search-icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+.gm-search:focus-within .gm-search-icon { color: var(--text-mute); }
+.gm-search-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  padding: 0;
   color: var(--text);
   font-size: 11px;
-  padding: 3px 7px;
+  font-family: inherit;
 }
-.diff-tree-filter:focus { outline: none; border-color: rgba(96, 165, 250, 0.4); }
+.gm-search-input:focus { outline: none; }
+.gm-search-input::placeholder { color: var(--text-dim); }
+/* Only offered once there is something to clear — an always-visible × on an
+   empty box is a control that does nothing. */
+.gm-search-clear {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.gm-search.is-filled .gm-search-clear { display: flex; }
+.gm-search-clear:hover { color: var(--text); background: var(--bg-hover); }
+.gm-search-clear-icon { width: 10px; height: 10px; display: block; }
+
 .diff-tree-totals { display: flex; gap: 5px; font-size: 10.5px; }
 .diff-tree-body { flex: 1; min-height: 0; overflow-y: auto; }
 .diff-tree-empty { padding: 10px 14px; color: var(--text-dim); font-size: 11px; }

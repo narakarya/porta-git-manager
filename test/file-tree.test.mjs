@@ -70,3 +70,29 @@ test("filterFiles keeps files whose path includes the query (case-insensitive)",
   assert.deepEqual(filterFiles(files, "").map((f) => f.path),
     ["src/Foo.ts", "src/bar.ts", "docs/foo.md"]);
 });
+
+test("filterFiles matches every term in any order", () => {
+  const files = [
+    { path: "src/components/app/ExtensionPanel.tsx" },
+    { path: "src/store/subscriptions.ts" },
+    { path: "src-tauri/src/log_rotation.rs" },
+  ];
+  assert.deepEqual(filterFiles(files, "panel comp").map((f) => f.path),
+    ["src/components/app/ExtensionPanel.tsx"]);
+  assert.deepEqual(filterFiles(files, "comp panel").map((f) => f.path),
+    ["src/components/app/ExtensionPanel.tsx"]);
+  assert.equal(filterFiles(files, "panel store").length, 0);
+});
+
+test("filterFiles returns a copy for an empty or blank query", () => {
+  const files = [{ path: "a.ts" }];
+  assert.deepEqual(filterFiles(files, "").map((f) => f.path), ["a.ts"]);
+  assert.deepEqual(filterFiles(files, "   ").map((f) => f.path), ["a.ts"]);
+  assert.notEqual(filterFiles(files, ""), files);
+});
+
+test("filterFiles uses the matcher it is handed", () => {
+  const files = [{ path: "a.ts" }, { path: "b.ts" }];
+  const only = (text) => text === "b.ts";
+  assert.deepEqual(filterFiles(files, "x", only).map((f) => f.path), ["b.ts"]);
+});

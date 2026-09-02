@@ -966,7 +966,8 @@
   // Data layer lives in file-tree.js (window.GMTree); these are local
   // aliases so callers don't have to know.
   const gmFileTree = window.GMTree.fileTree;
-  const gmFilterFiles = window.GMTree.filterFiles;
+  const gmFilterFiles = (files, query) =>
+    window.GMTree.filterFiles(files, query, window.GMText.matchesQuery);
   const gmParseStatus = window.GMStatus.parsePorcelain;
   const gmStatusClass = window.GMStatus.statusClass;
 
@@ -1102,15 +1103,84 @@
    * existing `is-collapsed` class — no imperative per-chevron update.
    */
   function gmChevron(cls) {
+    return gmSpriteIcon("icon-chevron", cls);
+  }
+
+  /** An `<svg><use href="#id">` from the sprite in index.html. */
+  function gmSpriteIcon(id, cls) {
     const ns = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(ns, "svg");
     svg.setAttribute("class", cls);
     svg.setAttribute("viewBox", "0 0 16 16");
     svg.setAttribute("aria-hidden", "true");
     const use = document.createElementNS(ns, "use");
-    use.setAttribute("href", "#icon-chevron");
+    use.setAttribute("href", "#" + id);
     svg.appendChild(use);
     return svg;
+  }
+
+  /**
+   * The search box every filterable list uses.
+   *
+   * There were five hand-rolled variants of this — five class combinations,
+   * no way to clear one short of selecting the text and deleting it, and
+   * Escape did nothing. This is one control: a magnifier, the field, and a
+   * clear button that appears once there is something to clear.
+   *
+   * Escape clears a non-empty box and stops there; when the box is already
+   * empty the key is left to bubble, so Escape still closes the modal or
+   * menu around it. Focus is never taken from the field by the clear button
+   * (`mousedown` is prevented), so you can keep typing straight after.
+   *
+   * `onChange` receives the current value. Callers own their own state, as
+   * before — this only standardises the widget.
+   */
+  function gmSearchInput({ placeholder, value, onChange, key, className }) {
+    const input = h("input", {
+      class: "gm-search-input",
+      type: "text",
+      spellcheck: false,
+      autocomplete: "off",
+      placeholder: placeholder || "Filter…",
+      value: value || "",
+      onInput: (e) => { sync(); onChange(e.target.value); },
+      onKeydown: (e) => {
+        if (e.key !== "Escape" || !input.value) return;
+        e.preventDefault();
+        e.stopPropagation();
+        clear();
+      },
+    });
+
+    const clearBtn = h("button", {
+      class: "gm-search-clear",
+      type: "button",
+      tabIndex: -1,
+      title: "Clear (Esc)",
+      "aria-label": "Clear search",
+      onMouseDown: (e) => e.preventDefault(),
+      onClick: clear,
+    }, gmSpriteIcon("icon-x", "gm-search-clear-icon"));
+
+    const wrap = h("div", {
+      class: "gm-search" + (className ? " " + className : ""),
+      key,
+    }, gmSpriteIcon("icon-search", "gm-search-icon"), input, clearBtn);
+
+    function sync() {
+      wrap.classList.toggle("is-filled", !!input.value);
+    }
+    function clear() {
+      if (!input.value) return;
+      input.value = "";
+      sync();
+      input.focus();
+      onChange("");
+    }
+
+    sync();
+    wrap.input = input;
+    return wrap;
   }
 
   /**
@@ -1145,10 +1215,11 @@
       if (row) row.classList.add("is-active");
     };
 
-    const filterInput = h("input", {
-      class: "diff-tree-filter",
+    const filterInput = gmSearchInput({
+      className: "diff-tree-filter",
       placeholder: "Filter files…",
-      onInput: (e) => { filter = e.target.value; repaint(); },
+      value: "",
+      onChange: (v) => { filter = v; repaint(); },
     });
     nav.append(h("div", { class: "diff-tree-toolbar" }, filterInput, totalsEl), body);
 
@@ -2362,12 +2433,12 @@
       ];
 
       // ─── Toolbar ──────────────────────────────────────────────────────
-      const filterInput = h("input", {
-        class: "status-filter",
+      const filterInput = gmSearchInput({
+        className: "status-filter",
         key: "status-filter",
         placeholder: "Filter files…",
         value: state.fileFilter,
-        onInput: (e) => { state.fileFilter = e.target.value; render(); },
+        onChange: (v) => { state.fileFilter = v; render(); },
       });
       const selectedCount = selectedStatus.size;
       const toolbar = h("div", { class: "status-toolbar" },
@@ -2848,14 +2919,14 @@
       node.className = "pane is-active branches-pane";
       let countSeq = null;
 
-      const filterInput = h("input", {
-        class: "history-search",
+      const filterInput = gmSearchInput({
         key: "branches-filter",
+        className: "history-search",
         placeholder: "Filter branches…",
         value: state.branchFilter,
         // Re-paint only the list — rebuilding this input on each keystroke
         // is what made the caret jump to the end.
-        onInput: (e) => { state.branchFilter = e.target.value; paint(); },
+        onChange: (v) => { state.branchFilter = v; paint(); },
       });
       const newInput = h("input", {
         class: "input branch-create-input",
@@ -3867,12 +3938,17 @@
           render({ force: true });
         },
       }, ...branches.map((name) => h("option", { value: name, selected: name === state.historySourceBranch }, name)));
-      const search = h("input", {
-        class: "history-search",
+      const search = gmSearchInput({
         key: "history-search",
+        className: "history-search",
         placeholder: "Filter commits by message…",
         value: state.historyFilter,
-        onInput: (e) => { state.historyFilter = e.target.value; clearTimeout(searchTimer); searchTimer = setTimeout(render, 250); },
+        // Debounced: this one re-runs `git log`, unlike the client-side lists.
+        onChange: (v) => {
+          state.historyFilter = v;
+          clearTimeout(searchTimer);
+          searchTimer = setTimeout(render, 250);
+        },
       });
       const progress = state.cherryPickInProgress
         ? h("div", { class: "history-progress" },
@@ -4355,12 +4431,12 @@
         onKeydown: (e) => { if (e.key === "Enter") save(); },
       });
       const untrackedChk = h("input", { type: "checkbox", checked: includeUntracked, onChange: (e) => { includeUntracked = e.target.checked; } });
-      const filterInput = h("input", {
-        class: "input history-search stash-filter-input",
+      const filterInput = gmSearchInput({
+        className: "stash-filter-input",
         key: "stash-filter",
         placeholder: "Filter stashes…",
         value: filter,
-        onInput: (e) => { filter = e.target.value; paint(); },
+        onChange: (v) => { filter = v; paint(); },
       });
       next.append(h("div", { class: "stash-top", key: "stash-top" },
         msgInput,
@@ -4560,12 +4636,12 @@
         type: "checkbox", checked: annotated,
         onChange: (e) => { annotated = e.target.checked; render(); },
       });
-      const filterInput = h("input", {
-        class: "history-search tag-filter-input",
+      const filterInput = gmSearchInput({
+        className: "tag-filter-input",
         key: "tag-filter",
-        placeholder: "Filter…",
+        placeholder: "Filter tags…",
         value: filter,
-        onInput: (e) => { filter = e.target.value; render(); },
+        onChange: (v) => { filter = v; render(); },
       });
 
       next.append(h("div", { class: "tags-top", key: "tags-top" },
@@ -4981,9 +5057,12 @@
       }
 
       // Top bar — filter re-paints the list client-side (input never rebuilt).
-      const filterInput = h("input", {
-        class: "history-search", key: "pr-filter", placeholder: "Filter PRs…", value: filter,
-        onInput: (e) => { filter = e.target.value; paintList(); },
+      const filterInput = gmSearchInput({
+        key: "pr-filter",
+        className: "history-search",
+        placeholder: "Filter PRs…",
+        value: filter,
+        onChange: (v) => { filter = v; paintList(); },
       });
       next.append(h("div", { class: "pr-top", key: "pr-top" },
         filterInput,
