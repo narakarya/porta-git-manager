@@ -849,12 +849,16 @@ html[data-gm-theme="paper"] ::selection {
 }
 .diff-tree-dir:hover { background: var(--bg-hover); color: var(--text); }
 .diff-tree-dir .tree-chev {
-  font-size: 10px;
-  width: 10px;
-  text-align: center;
-  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+  display: block;
   opacity: 0.7;
+  transform: rotate(90deg);
+  transform-origin: center;
+  transition: transform 0.15s ease, opacity 0.12s;
 }
+.diff-tree-dir.is-collapsed .tree-chev { transform: rotate(0deg); }
 .diff-tree-dir:hover .tree-chev { opacity: 1; }
 .tree-folder-icon {
   width: 15px;
@@ -2124,16 +2128,22 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
   z-index: -1;
   background: var(--bg-pane);
 }
+/* Disclosure chevron. One right-pointing stroke, rotated to point down when
+   the section is open — see `gmChevron`. Rotating rather than swapping glyphs
+   keeps the icon box fixed (the ▸/▾ pair are different widths, so the path
+   beside them shifted on every toggle) and lets the state change animate. */
 .diff-file-head .chev {
-  font-size: 13px;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  display: block;
   opacity: 0.8;
-  width: 18px;
-  text-align: center;
-  line-height: 1;
-  flex-shrink: 0;
   color: var(--text-mute);
-  transition: color 0.12s;
+  transform: rotate(90deg);
+  transform-origin: center;
+  transition: transform 0.15s ease, color 0.12s, opacity 0.12s;
 }
+.diff-file-block.is-collapsed .diff-file-head .chev { transform: rotate(0deg); }
 .diff-file-head:hover .chev { color: var(--text); opacity: 1; }
 .diff-file-head { padding: 8px 14px; }
 .diff-file-head .path { font-family: var(--mono); font-size: 11.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2253,6 +2263,32 @@ mark.hl { background: rgba(251,191,36,.30); color: var(--amber); border-radius: 
 .commit-card .parent-label {
   font-size: 10.5px;
   color: var(--text-mute);
+}
+
+/* History commit detail: navigator beside the diff, GitHub-style. The pane
+   sticks while the diff scrolls — `.history-detail` is the scroll container,
+   so `top: 0` pins it there rather than to the viewport. Only appears for
+   multi-file commits; a one-file commit has nothing to navigate. */
+.commit-body {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+.commit-body .diff-tree {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  align-self: flex-start;
+  flex: 0 0 210px;
+  width: 210px;
+  /* The sticky pane needs a height of its own to scroll inside; its
+     parent is as tall as the whole diff, so that cannot come from `100%`. */
+  max-height: calc(100vh - 96px);
+  background: var(--bg-pane);
+}
+.commit-body .commit-diff {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .commit-stat-strip {

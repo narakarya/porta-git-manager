@@ -560,8 +560,8 @@
         };
         const showList = (list) => renderInto(list);
 
-        const activeRowRef = { row: null };
-        const paintTreeRef = { fn: null };
+        // Assigned below, once the file list is known to need a navigator.
+        let navPane = null;
 
         async function reload() {
           if (!hasRefetch) return;
@@ -569,18 +569,12 @@
             const fresh = await refetch({ ignoreWhitespace: ignoreWs, context: contextLines });
             if (!Array.isArray(fresh)) return;
             currentFiles = fresh;
-            if (paintTreeRef.fn) {
-              paintTreeRef.fn();
-            }
-            if (activeRowRef.row && activeRowRef.row.classList.contains("diff-tree-all")) {
-              renderInto(currentFiles);
-            } else if (activeRowRef.row) {
-              const path = activeRowRef.row.dataset.path;
-              const match = currentFiles.find((f) => f.path === path);
-              renderInto(match ? [match] : currentFiles);
-            } else {
-              renderInto(currentFiles);
-            }
+            // Whichever file was open stays open across the refetch — that is
+            // the whole point of changing context lines while reading one.
+            const path = navPane ? navPane.selectedPath() : null;
+            if (navPane) navPane.repaint();
+            const match = path ? currentFiles.find((f) => f.path === path) : null;
+            renderInto(match ? [match] : currentFiles);
           } catch (e) {
             ui.toast("Could not refresh diff: " + (e.message || e), "error", 5000);
           }
@@ -590,64 +584,13 @@
         if (files.length > 1) {
           // VSCode-style: a file tree on the left, the selected file's diff on
           // the right. "All files" shows the full multi-file diff.
-          const nav = h("div", { class: "diff-tree" });
-          activeRowRef.row = null;
-          const setActive = (row) => {
-            if (activeRowRef.row) activeRowRef.row.classList.remove("is-active");
-            activeRowRef.row = row;
-            if (row) row.classList.add("is-active");
-          };
-          const totals = files.reduce((acc, f) => { const s = gmFileStats(f); acc.add += s.add; acc.del += s.del; return acc; }, { add: 0, del: 0 });
-
-          let treeFilter = "";
-          const filterInput = h("input", {
-            class: "diff-tree-filter",
-            placeholder: "Filter files…",
-            onInput: (e) => { treeFilter = e.target.value; paintTree(); },
+          // `getFiles` reads `currentFiles` rather than `files`: a refetch
+          // (context lines, ignore-whitespace) swaps the list underneath us.
+          navPane = gmFileNavPane({
+            getFiles: () => currentFiles,
+            onShow: showList,
           });
-          const toolbar = h("div", { class: "diff-tree-toolbar" },
-            filterInput,
-            h("span", { class: "diff-tree-totals" },
-              h("span", { class: "stat-add" }, "+" + totals.add),
-              h("span", { class: "stat-del" }, "−" + totals.del),
-            ),
-          );
-          const treeBody = h("div", { class: "diff-tree-body" });
-
-          function paintTree() {
-            treeBody.innerHTML = "";
-            const visible = gmFilterFiles(currentFiles, treeFilter);
-            const allRow = h("button", {
-              class: "diff-tree-row diff-tree-all" + (!treeFilter && (!activeRowRef.row || activeRowRef.row === null) ? " is-active" : ""),
-              tabIndex: -1,
-              onMouseDown: (e) => e.preventDefault(),
-              onClick: () => { setActive(allRow); showList(visible); },
-            },
-              h("span", { class: "diff-tree-name" },
-                visible.length + (treeFilter ? " of " + currentFiles.length : "") + " files changed"),
-              h("span", { class: "diff-tree-stat" },
-                h("span", { class: "stat-add" }, "+" + totals.add),
-                h("span", { class: "stat-del" }, "−" + totals.del)),
-            );
-            if (!activeRowRef.row) {
-              activeRowRef.row = allRow;
-              allRow.classList.add("is-active");
-            }
-            treeBody.append(allRow);
-            if (visible.length === 0) {
-              treeBody.append(h("div", { class: "diff-tree-empty" }, "No files match"));
-              return;
-            }
-            gmRenderFileTree(treeBody, visible, {
-              onPick: (f, row) => { setActive(row); showList([f]); },
-            });
-          }
-          paintTreeRef.fn = paintTree;
-          paintTree();
-
-          nav.append(toolbar);
-          nav.append(treeBody);
-          main = h("div", { class: "diff-modal-main" }, nav, content);
+          main = h("div", { class: "diff-modal-main" }, navPane.nav, content);
         } else {
           main = h("div", { class: "diff-modal-main is-single" }, content);
         }
@@ -934,7 +877,7 @@
 
       // Sticky header: chevron + icon + path + +/- stats pills.
       const st = gmFileStats(f);
-      const chev = h("span", { class: "chev" }, "▾");
+      const chev = gmChevron("chev");
       const head = h("div", { class: "diff-file-head" },
         chev,
         gmFileIcon(f.path),
@@ -947,7 +890,6 @@
       );
       head.addEventListener("click", () => {
         const collapsed = block.classList.toggle("is-collapsed");
-        chev.textContent = collapsed ? "▸" : "▾";
       });
       block.append(head);
 
@@ -983,7 +925,7 @@
       const block = h("div", { class: "diff-file-block" });
       const body  = h("div", { class: "diff-file-body" });
       const st = gmFileStats(f);
-      const chev = h("span", { class: "chev" }, "▾");
+      const chev = gmChevron("chev");
       const head = h("div", { class: "diff-file-head" },
         chev,
         gmFileIcon(f.path),
@@ -996,7 +938,6 @@
       );
       head.addEventListener("click", () => {
         const collapsed = block.classList.toggle("is-collapsed");
-        chev.textContent = collapsed ? "▸" : "▾";
       });
       block.append(head);
 
@@ -1076,7 +1017,7 @@
         // in the DOM — caller doesn't need to track anything; if the
         // caller fully re-renders the tree, folders reset to expanded.
         const dirPath = prefix + dir.name + "/";
-        const chev = h("span", { class: "tree-chev" }, "▾");
+        const chev = gmChevron("tree-chev");
         const folderIcon = gmFolderIcon(true); // rows start expanded → open folder
         const dirFiles = collectFiles(dir);
         const metaFile = dirFileFor ? dirFileFor(dirPath, dirFiles) : null;
@@ -1107,7 +1048,6 @@
           }
           const collapsed = childWrap.classList.toggle("is-collapsed");
           dirRow.classList.toggle("is-collapsed", collapsed);
-          chev.textContent = collapsed ? "▸" : "▾";
           folderIcon._use.setAttribute("href", collapsed ? "#ficon-folder" : "#ficon-folder-open");
         });
         if (onDirContextMenu) {
@@ -1149,6 +1089,123 @@
   }
 
   /** Return an <svg.ficon> referencing the appropriate sprite symbol by file extension. */
+  /**
+   * The disclosure chevron used by collapsible rows.
+   *
+   * One right-pointing glyph that CSS rotates to point down when open, rather
+   * than swapping the character between the two triangles: the text arrows sit
+   * on the baseline at whatever weight the font gives them, shift by a pixel as
+   * they swap, and cannot animate. A rotated stroke has a fixed box, matches the
+   * other icons' stroke weight, and turns.
+   *
+   * Because open/closed is expressed as a transform, callers only toggle their
+   * existing `is-collapsed` class — no imperative per-chevron update.
+   */
+  function gmChevron(cls) {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("class", cls);
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS(ns, "use");
+    use.setAttribute("href", "#icon-chevron");
+    svg.appendChild(use);
+    return svg;
+  }
+
+  /**
+   * The file navigator shared by the diff modal and History's commit detail:
+   * a filter box, a totals readout, an "N files changed" row that shows the
+   * whole diff, and the folder tree under it.
+   *
+   * `getFiles()` is called on every repaint rather than the list being
+   * captured once, because the modal replaces its file list underneath the
+   * pane whenever the user changes context lines or ignore-whitespace.
+   *
+   * Returns the pane plus `repaint`, for callers whose file list can change.
+   * Repainting selects the "all files" row but deliberately does not call
+   * `onShow`: after a refetch the caller re-renders the content itself, and
+   * after a filter keystroke the shown diff should stay put.
+   */
+  function gmFileNavPane({ getFiles, onShow }) {
+    const nav = h("div", { class: "diff-tree" });
+    const totalsEl = h("span", { class: "diff-tree-totals" });
+    const body = h("div", { class: "diff-tree-body" });
+    let filter = "";
+    let activeRow = null;
+    // The selection is remembered as a path, not a row: a repaint throws every
+    // row away, so holding the element would leave the caller reading a
+    // detached node to work out what is on screen.
+    let activePath = null;
+
+    const setActive = (row, path) => {
+      if (activeRow) activeRow.classList.remove("is-active");
+      activeRow = row;
+      activePath = path == null ? null : path;
+      if (row) row.classList.add("is-active");
+    };
+
+    const filterInput = h("input", {
+      class: "diff-tree-filter",
+      placeholder: "Filter files…",
+      onInput: (e) => { filter = e.target.value; repaint(); },
+    });
+    nav.append(h("div", { class: "diff-tree-toolbar" }, filterInput, totalsEl), body);
+
+    function statPair(totals) {
+      return [
+        h("span", { class: "stat-add" }, "+" + totals.add),
+        h("span", { class: "stat-del" }, "−" + totals.del),
+      ];
+    }
+
+    function repaint() {
+      const all = getFiles() || [];
+      const totals = all.reduce((acc, f) => {
+        const st = gmFileStats(f); acc.add += st.add; acc.del += st.del; return acc;
+      }, { add: 0, del: 0 });
+
+      totalsEl.innerHTML = "";
+      totalsEl.append(...statPair(totals));
+
+      body.innerHTML = "";
+      activeRow = null;
+      const visible = gmFilterFiles(all, filter);
+      const allRow = h("button", {
+        class: "diff-tree-row diff-tree-all",
+        tabIndex: -1,
+        // Keep focus in the filter box so typing never loses the caret.
+        onMouseDown: (e) => e.preventDefault(),
+        onClick: () => { setActive(allRow, null); onShow(visible); },
+      },
+        h("span", { class: "diff-tree-name" },
+          visible.length + (filter ? " of " + all.length : "") + " file" +
+          (visible.length === 1 ? "" : "s") + " changed"),
+        h("span", { class: "diff-tree-stat" }, ...statPair(totals)),
+      );
+      const wanted = activePath;
+      setActive(allRow, null);
+      body.append(allRow);
+      if (!visible.length) {
+        body.append(h("div", { class: "diff-tree-empty" }, "No files match"));
+        return;
+      }
+      gmRenderFileTree(body, visible, {
+        onPick: (f, row) => { setActive(row, f.path); onShow([f]); },
+      });
+      // Re-select whatever was selected before, now that its row exists again.
+      // Silently falls back to "all files" when the file is gone from the new
+      // list — filtered out, or dropped by a refetch.
+      if (wanted) {
+        const row = body.querySelector('.diff-tree-file[data-path="' + window.CSS.escape(wanted) + '"]');
+        if (row) setActive(row, wanted);
+      }
+    }
+
+    repaint();
+    return { nav, repaint, selectedPath: () => activePath };
+  }
+
   function gmFileIcon(path) {
     const ext = (path || "").split(".").pop().toLowerCase();
     // Map sibling/template extensions onto their canonical language glyph.
@@ -3723,8 +3780,21 @@
       ));
 
       const diffWrap = h("div", { class: "commit-diff" });
-      detailNode.append(diffWrap);
-      gmRenderDiffDoc(diffWrap, files);
+      if (files.length > 1) {
+        // Same navigator the diff modal uses, so a commit that touched thirty
+        // files is browsable by folder instead of being one long scroll — and
+        // picking a file renders only that file's diff rather than all of them.
+        const showFiles = (list) => {
+          diffWrap.innerHTML = "";
+          gmRenderDiffDoc(diffWrap, list);
+        };
+        const navPane = gmFileNavPane({ getFiles: () => files, onShow: showFiles });
+        detailNode.append(h("div", { class: "commit-body" }, navPane.nav, diffWrap));
+        showFiles(files);
+      } else {
+        detailNode.append(diffWrap);
+        gmRenderDiffDoc(diffWrap, files);
+      }
     }
 
     async function renderDetail(detailNode, commit) {
